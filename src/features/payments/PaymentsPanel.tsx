@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from 'react';
 import { Button } from '../../components/Button';
 import { Card } from '../../components/Card';
 import { EmptyState } from '../../components/EmptyState';
@@ -14,8 +14,8 @@ interface PaymentsPanelProps {
   orders: Order[];
   payments: Payment[];
   selectedOrderId: string;
-  onPaymentsChange: (payments: Payment[]) => void;
-  onOrdersChange: (orders: Order[]) => void;
+  onPaymentsChange: Dispatch<SetStateAction<Payment[]>>;
+  onOrdersChange: Dispatch<SetStateAction<Order[]>>;
   onSelectedOrderIdChange: (orderId: string) => void;
   onError: (message: string) => void;
 }
@@ -39,9 +39,18 @@ export function PaymentsPanel({
   const [orderId, setOrderId] = useState(selectedOrderId);
   const [amount, setAmount] = useState('');
   const [method, setMethod] = useState<PaymentMethod>('cash');
-  const [isLoading, setIsLoading] = useState(false);
+  const [pendingAction, setPendingAction] = useState('');
 
   const selectedOrder = useMemo(() => orders.find((order) => order.id === (orderId || selectedOrderId)) ?? null, [orders, orderId, selectedOrderId]);
+
+  useEffect(() => {
+    if (!selectedOrderId) return;
+    setOrderId(selectedOrderId);
+    const order = orders.find((candidate) => candidate.id === selectedOrderId);
+    if (order) {
+      setAmount(order.total_price);
+    }
+  }, [orders, selectedOrderId]);
 
   function useOrder(order: Order) {
     onSelectedOrderIdChange(order.id);
@@ -55,14 +64,14 @@ export function PaymentsPanel({
       onError('Select or enter an order id first.');
       return;
     }
-    setIsLoading(true);
+    setPendingAction('load-bill');
     try {
       const bill = await api.getBill(id);
       setAmount(bill.amount_due);
     } catch (error) {
       onError(error instanceof Error ? error.message : String(error));
     } finally {
-      setIsLoading(false);
+      setPendingAction('');
     }
   }
 
@@ -76,20 +85,20 @@ export function PaymentsPanel({
       onError('Amount is required.');
       return;
     }
-    setIsLoading(true);
+    setPendingAction('create-payment');
     try {
       const payment = await api.createPayment({ order_id: id, amount, method });
-      onPaymentsChange([payment, ...payments]);
+      onPaymentsChange((current) => [payment, ...current]);
       try {
         const refreshed = await api.trackOrder(id);
-        onOrdersChange(upsertOrder(orders, refreshed));
+        onOrdersChange((current) => upsertOrder(current, refreshed));
       } catch {
         // Payment succeeded; order refresh is diagnostic only.
       }
     } catch (error) {
       onError(error instanceof Error ? error.message : String(error));
     } finally {
-      setIsLoading(false);
+      setPendingAction('');
     }
   }
 
@@ -99,7 +108,7 @@ export function PaymentsPanel({
         <Card
           title="Payment Capture"
           subtitle="Submit cash or credit card payments and verify payment_status transitions."
-          actions={<Button variant="secondary" onClick={loadBillIntoAmount} disabled={isLoading || (!orderId && !selectedOrderId)}>Load amount due</Button>}
+          actions={<Button variant="secondary" onClick={loadBillIntoAmount} disabled={pendingAction === 'load-bill' || (!orderId && !selectedOrderId)}>Load amount due</Button>}
         >
           <Field label="Order ID">
             <TextInput value={orderId || selectedOrderId} onChange={(event) => setOrderId(event.target.value)} />
@@ -116,7 +125,7 @@ export function PaymentsPanel({
             </Field>
           </div>
           <div className="button-row">
-            <Button onClick={createPayment} disabled={isLoading}>Create payment</Button>
+            <Button onClick={createPayment} disabled={pendingAction === 'create-payment'}>Create payment</Button>
           </div>
         </Card>
 

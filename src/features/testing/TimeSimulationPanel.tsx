@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type Dispatch, type SetStateAction } from 'react';
 import { Button } from '../../components/Button';
 import { Card } from '../../components/Card';
 import { Field, TextInput } from '../../components/FormField';
@@ -10,7 +10,7 @@ import type { KitchenStatus, Order, TestStepResult } from '../../types/domain';
 interface TimeSimulationPanelProps {
   api: SnackBuildersApiClient;
   orders: Order[];
-  onOrdersChange: (orders: Order[]) => void;
+  onOrdersChange: Dispatch<SetStateAction<Order[]>>;
   onKitchenStatusChange: (status: KitchenStatus) => void;
   onResult: (result: TestStepResult) => void;
   onError: (message: string) => void;
@@ -34,7 +34,7 @@ export function TimeSimulationPanel({
   const [minutes, setMinutes] = useState(1);
   const [lastResponse, setLastResponse] = useState<KitchenStatus | null>(null);
   const [trackedOrders, setTrackedOrders] = useState<Order[]>([]);
-  const [isRunning, setIsRunning] = useState(false);
+  const [isAdvancing, setIsAdvancing] = useState(false);
   const seconds = useMemo(() => Math.max(1, Math.round(Number(minutes || 0) * 60)), [minutes]);
 
   function adjustMinutes(delta: number) {
@@ -53,13 +53,13 @@ export function TimeSimulationPanel({
 
     setTrackedOrders(tracked);
     if (tracked.length) {
-      onOrdersChange(upsertOrders(currentOrders, tracked));
+      onOrdersChange((current) => upsertOrders(current, tracked));
     }
     return tracked;
   }
 
   async function advanceTime() {
-    setIsRunning(true);
+    setIsAdvancing(true);
     try {
       const kitchen = await api.advanceKitchenTime(seconds);
       onKitchenStatusChange(kitchen);
@@ -76,7 +76,7 @@ export function TimeSimulationPanel({
       onResult({ name: 'Kitchen time advance failed', ok: false, detail: message, payload: { request: { seconds } } });
       onError(message);
     } finally {
-      setIsRunning(false);
+      setIsAdvancing(false);
     }
   }
 
@@ -85,7 +85,7 @@ export function TimeSimulationPanel({
       title="Kitchen Time Simulation"
       subtitle="Advance the kitchen scheduler clock using POST /kitchen/time/advance, then refresh ovens, queue, current_time, and visible orders."
       actions={
-        <Button onClick={advanceTime} disabled={isRunning}>
+        <Button onClick={advanceTime} disabled={isAdvancing}>
           Advance {seconds}s
         </Button>
       }
@@ -95,9 +95,9 @@ export function TimeSimulationPanel({
           <div className="grid grid-2">
             <Field label="Minutes to advance" hint="Advance 1 minute to see remaining time decrease; 5 minutes completes cookies.">
               <div className="time-stepper">
-                <Button variant="secondary" type="button" onClick={() => adjustMinutes(-1)} disabled={isRunning}>-</Button>
+                <Button variant="secondary" type="button" onClick={() => adjustMinutes(-1)}>-</Button>
                 <TextInput type="number" min={0.5} step="0.5" value={minutes} onChange={(event) => setMinutes(Number(event.target.value))} />
-                <Button variant="secondary" type="button" onClick={() => adjustMinutes(1)} disabled={isRunning}>+</Button>
+                <Button variant="secondary" type="button" onClick={() => adjustMinutes(1)}>+</Button>
               </div>
             </Field>
             <div className="metric">
@@ -107,11 +107,11 @@ export function TimeSimulationPanel({
           </div>
 
           <div className="time-presets" aria-label="Bake time presets">
-            <Button variant="secondary" type="button" onClick={() => setMinutes(5)} disabled={isRunning}>Cookies 5m</Button>
-            <Button variant="secondary" type="button" onClick={() => setMinutes(10)} disabled={isRunning}>Pastries 10m</Button>
-            <Button variant="secondary" type="button" onClick={() => setMinutes(20)} disabled={isRunning}>Breads 20m</Button>
-            <Button variant="ghost" type="button" onClick={() => adjustMinutes(1)} disabled={isRunning}>+1m</Button>
-            <Button variant="ghost" type="button" onClick={() => adjustMinutes(5)} disabled={isRunning}>+5m</Button>
+            <Button variant="secondary" type="button" onClick={() => setMinutes(5)}>Cookies 5m</Button>
+            <Button variant="secondary" type="button" onClick={() => setMinutes(10)}>Pastries 10m</Button>
+            <Button variant="secondary" type="button" onClick={() => setMinutes(20)}>Breads 20m</Button>
+            <Button variant="ghost" type="button" onClick={() => adjustMinutes(1)}>+1m</Button>
+            <Button variant="ghost" type="button" onClick={() => adjustMinutes(5)}>+5m</Button>
           </div>
 
           <div className="info-callout">

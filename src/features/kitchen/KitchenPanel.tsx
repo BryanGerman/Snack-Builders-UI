@@ -38,16 +38,18 @@ function priorityTone(priority: number): 'vip' | 'warning' | 'neutral' {
 }
 
 function taskRemaining(task: KitchenTask, kitchenStatus: KitchenStatus): string {
+  const zeroLabel = task.oven_id ? 'finishing...' : 'queued';
+
   if (task.remaining_bake_seconds !== null && task.remaining_bake_seconds !== undefined) {
-    return remainingSeconds(task.remaining_bake_seconds);
+    return remainingSeconds(task.remaining_bake_seconds, zeroLabel);
   }
 
-  return remainingFromKitchenTime(task.finishes_at, kitchenStatus.current_time);
+  return remainingFromKitchenTime(task.finishes_at, kitchenStatus.current_time, zeroLabel);
 }
 
 export function KitchenPanel({ api, kitchenStatus, orders, onKitchenStatusChange, onError }: KitchenPanelProps) {
   const [manualOrderId, setManualOrderId] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
+  const [pendingAction, setPendingAction] = useState('');
 
   const queuedByPriority = useMemo(() => {
     if (!kitchenStatus) return [];
@@ -59,13 +61,13 @@ export function KitchenPanel({ api, kitchenStatus, orders, onKitchenStatusChange
       onError('Enter or select an order id.');
       return;
     }
-    setIsLoading(true);
+    setPendingAction('schedule');
     try {
       onKitchenStatusChange(await api.scheduleOrder(orderId));
     } catch (error) {
       onError(error instanceof Error ? error.message : String(error));
     } finally {
-      setIsLoading(false);
+      setPendingAction('');
     }
   }
 
@@ -154,7 +156,7 @@ export function KitchenPanel({ api, kitchenStatus, orders, onKitchenStatusChange
                   <Field label="Schedule order manually">
                     <TextInput value={manualOrderId} onChange={(event) => setManualOrderId(event.target.value)} placeholder="order id" />
                   </Field>
-                  <Button onClick={() => scheduleOrder(manualOrderId)} disabled={isLoading || !manualOrderId}>Schedule</Button>
+                  <Button onClick={() => scheduleOrder(manualOrderId)} disabled={pendingAction === 'schedule' || !manualOrderId}>Schedule</Button>
                 </div>
               </Card>
 

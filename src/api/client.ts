@@ -28,6 +28,7 @@ interface RequestOptions {
 }
 
 export type ApiRequestMethod = NonNullable<RequestOptions['method']>;
+const REQUEST_TIMEOUT_MS = 25_000;
 
 function cleanBaseUrl(baseUrl: string): string {
   return baseUrl.trim().replace(/\/+$/, '');
@@ -57,6 +58,10 @@ function errorMessage(status: number, body: unknown): string {
   return `HTTP ${status}`;
 }
 
+function requestTimeoutMessage(path: string): string {
+  return `Request to ${path} timed out after ${Math.round(REQUEST_TIMEOUT_MS / 1000)}s. Check the API URL, CORS, or backend availability.`;
+}
+
 export class SnackBuildersApiClient {
   private readonly baseUrl: string;
   private readonly token: string;
@@ -82,7 +87,9 @@ export class SnackBuildersApiClient {
       headers.Authorization = `Bearer ${this.token.trim()}`;
     }
 
-    const init: RequestInit = { method, headers };
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    const init: RequestInit = { method, headers, signal: controller.signal };
     if (options.body !== undefined) {
       headers['Content-Type'] = 'application/json';
       init.body = JSON.stringify(options.body);
@@ -98,6 +105,7 @@ export class SnackBuildersApiClient {
       }
 
       const response = await fetch(`${this.baseUrl}${normalizedPath}`, init);
+      window.clearTimeout(timeout);
       const body = await parseBody(response);
       const durationMs = Math.round(performance.now() - started);
       this.onLog?.({
@@ -117,7 +125,11 @@ export class SnackBuildersApiClient {
       }
       return body as T;
     } catch (error) {
+      window.clearTimeout(timeout);
       if (error instanceof ApiError) throw error;
+      const normalizedError = error instanceof DOMException && error.name === 'AbortError'
+        ? new Error(requestTimeoutMessage(normalizedPath))
+        : error;
       const durationMs = Math.round(performance.now() - started);
       this.onLog?.({
         id: crypto.randomUUID(),
@@ -127,9 +139,9 @@ export class SnackBuildersApiClient {
         ok: false,
         durationMs,
         requestBody: options.body,
-        error: error instanceof Error ? error.message : String(error),
+        error: normalizedError instanceof Error ? normalizedError.message : String(normalizedError),
       });
-      throw error;
+      throw normalizedError;
     }
   }
 

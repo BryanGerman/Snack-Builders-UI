@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type Dispatch, type SetStateAction } from 'react';
 import { Button } from '../../components/Button';
 import { Card } from '../../components/Card';
 import { JsonBlock } from '../../components/JsonBlock';
@@ -13,9 +13,9 @@ interface TestingPanelProps {
   menu: MenuItem[];
   orders: Order[];
   payments: Payment[];
-  onMenuChange: (items: MenuItem[]) => void;
-  onOrdersChange: (orders: Order[]) => void;
-  onPaymentsChange: (payments: Payment[]) => void;
+  onMenuChange: Dispatch<SetStateAction<MenuItem[]>>;
+  onOrdersChange: Dispatch<SetStateAction<Order[]>>;
+  onPaymentsChange: Dispatch<SetStateAction<Payment[]>>;
   onKitchenStatusChange: (status: KitchenStatus) => void;
   onSelectedOrderIdChange: (orderId: string) => void;
   onError: (message: string) => void;
@@ -45,7 +45,7 @@ export function TestingPanel({
 }: TestingPanelProps) {
   const [results, setResults] = useState<TestStepResult[]>([]);
   const [scenarioOrders, setScenarioOrders] = useState<Order[]>([]);
-  const [isRunning, setIsRunning] = useState(false);
+  const [pendingScenario, setPendingScenario] = useState('');
 
   function push(step: TestStepResult) {
     setResults((current) => [step, ...current]);
@@ -59,7 +59,7 @@ export function TestingPanel({
     const bakeName = category === 'cookies' ? 'Smoke Test Cookies' : category === 'pastries' ? 'Smoke Test Pastries' : 'Smoke Test Bread';
     const price = category === 'cookies' ? '3.50' : category === 'pastries' ? '5.25' : '7.75';
     const created = await api.createMenuItem({ name: `${bakeName} ${Date.now()}`, category, price });
-    onMenuChange([created, ...latestMenu]);
+    onMenuChange((current) => [created, ...current]);
     return created;
   }
 
@@ -68,13 +68,13 @@ export function TestingPanel({
       priority_level: priority,
       items: [{ menu_item_id: menuItem.id, quantity }],
     });
-    onOrdersChange(upsertOrder(orders, order));
+    onOrdersChange((current) => upsertOrder(current, order));
     onSelectedOrderIdChange(order.id);
     return order;
   }
 
   async function runSmokeTests() {
-    setIsRunning(true);
+    setPendingScenario('smoke');
     setResults([]);
     try {
       const items = await api.listMenu();
@@ -101,12 +101,12 @@ export function TestingPanel({
       push(makeStep('Smoke test failed', false, message));
       onError(message);
     } finally {
-      setIsRunning(false);
+      setPendingScenario('');
     }
   }
 
   async function runCompleteE2E() {
-    setIsRunning(true);
+    setPendingScenario('e2e');
     setResults([]);
     try {
       const cookies = await ensureMenuItem('cookies');
@@ -122,7 +122,7 @@ export function TestingPanel({
           { menu_item_id: bread.id, quantity: 1 },
         ],
       });
-      onOrdersChange(upsertOrder(orders, order));
+      onOrdersChange((current) => upsertOrder(current, order));
       onSelectedOrderIdChange(order.id);
       push(makeStep('Multi-item order placed', true, `Ticket ${truncateMiddle(order.id, 24)} · total ${money(order.total_price)} · ETA ${relativeMinutes(order.estimated_ready_time)}`, order));
 
@@ -130,11 +130,11 @@ export function TestingPanel({
       push(makeStep('Price ticket / bill verified', true, `Subtotal ${money(bill.subtotal)}, amount due ${money(bill.amount_due)}`, bill));
 
       const payment = await api.createPayment({ order_id: order.id, amount: bill.amount_due, method: 'credit_card' });
-      onPaymentsChange([payment, ...payments]);
+      onPaymentsChange((current) => [payment, ...current]);
       push(makeStep('Credit card payment accepted', true, `Payment ${payment.status} for ${money(payment.amount)}`, payment));
 
       const paidOrder = await api.trackOrder(order.id);
-      onOrdersChange(upsertOrder(upsertOrder(orders, order), paidOrder));
+      onOrdersChange((current) => upsertOrder(upsertOrder(current, order), paidOrder));
       push(makeStep('Order payment status refreshed', paidOrder.payment_status === 'paid', `Payment status: ${paidOrder.payment_status}`, paidOrder));
 
       const kitchen = await api.getKitchenStatus();
@@ -145,12 +145,12 @@ export function TestingPanel({
       push(makeStep('E2E flow failed', false, message));
       onError(message);
     } finally {
-      setIsRunning(false);
+      setPendingScenario('');
     }
   }
 
   async function runPriorityScenario() {
-    setIsRunning(true);
+    setPendingScenario('priority');
     setResults([]);
     setScenarioOrders([]);
     try {
@@ -193,14 +193,14 @@ export function TestingPanel({
         }
       }
       setScenarioOrders(refreshed);
-      onOrdersChange([...refreshed, ...orders.filter((order) => !refreshed.some((next) => next.id === order.id))]);
+      onOrdersChange((current) => [...refreshed, ...current.filter((order) => !refreshed.some((next) => next.id === order.id))]);
       push(makeStep('Lower-priority ETAs refreshed', true, 'Tracked scenario orders after VIP insertion to compare estimated_ready_time.', refreshed));
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       push(makeStep('Priority scenario failed', false, message));
       onError(message);
     } finally {
-      setIsRunning(false);
+      setPendingScenario('');
     }
   }
 
@@ -220,9 +220,9 @@ export function TestingPanel({
         subtitle="Run high-value checks for menu, tickets, payment, capacity, priority queue, and ETA updates."
         actions={
           <div className="button-row">
-            <Button variant="secondary" onClick={runSmokeTests} disabled={isRunning}>Smoke</Button>
-            <Button onClick={runCompleteE2E} disabled={isRunning}>Run E2E</Button>
-            <Button variant="secondary" onClick={runPriorityScenario} disabled={isRunning}>Priority scenario</Button>
+            <Button variant="secondary" onClick={runSmokeTests} disabled={pendingScenario === 'smoke'}>Smoke</Button>
+            <Button onClick={runCompleteE2E} disabled={pendingScenario === 'e2e'}>Run E2E</Button>
+            <Button variant="secondary" onClick={runPriorityScenario} disabled={pendingScenario === 'priority'}>Priority scenario</Button>
           </div>
         }
       >

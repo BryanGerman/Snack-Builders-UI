@@ -29,13 +29,13 @@ export function relativeMinutes(value: string | null | undefined): string {
   return `${Math.abs(minutes)} min ago`;
 }
 
-export function remainingFromKitchenTime(value: string | null | undefined, kitchenCurrentTime: string | null | undefined): string {
+export function remainingFromKitchenTime(value: string | null | undefined, kitchenCurrentTime: string | null | undefined, zeroLabel = 'ready now'): string {
   if (!value) return '-';
   const target = new Date(value).getTime();
   const current = kitchenCurrentTime ? new Date(kitchenCurrentTime).getTime() : Date.now();
   if (Number.isNaN(target) || Number.isNaN(current)) return value;
   const seconds = Math.max(0, Math.ceil((target - current) / 1000));
-  if (seconds === 0) return 'ready now';
+  if (seconds === 0) return zeroLabel;
   const minutes = Math.floor(seconds / 60);
   const remainder = seconds % 60;
   if (minutes === 0) return `${remainder}s remaining`;
@@ -43,11 +43,11 @@ export function remainingFromKitchenTime(value: string | null | undefined, kitch
   return `${minutes}m ${remainder}s remaining`;
 }
 
-export function remainingSeconds(value: number | null | undefined): string {
+export function remainingSeconds(value: number | null | undefined, zeroLabel = 'ready now'): string {
   if (value === null || value === undefined) return '-';
   const seconds = Math.max(0, Math.ceil(Number(value)));
   if (!Number.isFinite(seconds)) return String(value);
-  if (seconds === 0) return 'ready now';
+  if (seconds === 0) return zeroLabel;
   const minutes = Math.floor(seconds / 60);
   const remainder = seconds % 60;
   if (minutes === 0) return `${remainder}s remaining`;

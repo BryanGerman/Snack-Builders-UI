@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type Dispatch, type SetStateAction } from 'react';
 import { Button } from '../../components/Button';
 import { Card } from '../../components/Card';
 import { EmptyState } from '../../components/EmptyState';
@@ -18,64 +18,64 @@ const INITIAL_FORM: MenuItemCreate = {
 interface MenuPanelProps {
   api: SnackBuildersApiClient;
   menu: MenuItem[];
-  onMenuChange: (items: MenuItem[]) => void;
+  onMenuChange: Dispatch<SetStateAction<MenuItem[]>>;
   onError: (message: string) => void;
 }
 
 export function MenuPanel({ api, menu, onMenuChange, onError }: MenuPanelProps) {
   const [form, setForm] = useState<MenuItemCreate>(INITIAL_FORM);
   const [selectedId, setSelectedId] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
+  const [pendingAction, setPendingAction] = useState('');
   const selected = useMemo(() => menu.find((item) => item.id === selectedId) ?? null, [menu, selectedId]);
 
   async function loadMenu() {
-    setIsLoading(true);
+    setPendingAction('load');
     try {
       onMenuChange(await api.listMenu());
     } catch (error) {
       onError(error instanceof Error ? error.message : String(error));
     } finally {
-      setIsLoading(false);
+      setPendingAction('');
     }
   }
 
   async function createItem() {
-    setIsLoading(true);
+    setPendingAction('create');
     try {
       const item = await api.createMenuItem(form);
-      onMenuChange([item, ...menu]);
+      onMenuChange((current) => [item, ...current]);
       setSelectedId(item.id);
     } catch (error) {
       onError(error instanceof Error ? error.message : String(error));
     } finally {
-      setIsLoading(false);
+      setPendingAction('');
     }
   }
 
   async function updateSelected() {
     if (!selected) return;
-    setIsLoading(true);
+    setPendingAction('update');
     try {
       const updated = await api.updateMenuItem(selected.id, form);
-      onMenuChange(menu.map((item) => (item.id === updated.id ? updated : item)));
+      onMenuChange((current) => current.map((item) => (item.id === updated.id ? updated : item)));
     } catch (error) {
       onError(error instanceof Error ? error.message : String(error));
     } finally {
-      setIsLoading(false);
+      setPendingAction('');
     }
   }
 
   async function deactivateSelected() {
     if (!selected) return;
-    setIsLoading(true);
+    setPendingAction('deactivate');
     try {
       await api.deleteMenuItem(selected.id);
-      onMenuChange(menu.filter((item) => item.id !== selected.id));
+      onMenuChange((current) => current.filter((item) => item.id !== selected.id));
       setSelectedId('');
     } catch (error) {
       onError(error instanceof Error ? error.message : String(error));
     } finally {
-      setIsLoading(false);
+      setPendingAction('');
     }
   }
 
@@ -90,17 +90,17 @@ export function MenuPanel({ api, menu, onMenuChange, onError }: MenuPanelProps) 
       { name: `Demo Pastries ${Date.now()}`, category: 'pastries', price: '5.25' },
       { name: `Demo Bread ${Date.now()}`, category: 'breads', price: '7.75' },
     ];
-    setIsLoading(true);
+    setPendingAction('seed');
     try {
       const created: MenuItem[] = [];
       for (const item of required) {
         created.push(await api.createMenuItem(item));
       }
-      onMenuChange([...created, ...menu]);
+      onMenuChange((current) => [...created, ...current]);
     } catch (error) {
       onError(error instanceof Error ? error.message : String(error));
     } finally {
-      setIsLoading(false);
+      setPendingAction('');
     }
   }
 
@@ -110,7 +110,7 @@ export function MenuPanel({ api, menu, onMenuChange, onError }: MenuPanelProps) 
         <Card
           title="Menu Editor"
           subtitle="Create, update, and deactivate items. Bake time is inferred from category rules."
-          actions={<Button variant="secondary" onClick={seedRequiredItems} disabled={isLoading}>Seed demo items</Button>}
+          actions={<Button variant="secondary" onClick={seedRequiredItems} disabled={pendingAction === 'seed'}>Seed demo items</Button>}
         >
           <Field label="Name">
             <TextInput value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} />
@@ -128,9 +128,9 @@ export function MenuPanel({ api, menu, onMenuChange, onError }: MenuPanelProps) 
             </Field>
           </div>
           <div className="button-row">
-            <Button onClick={createItem} disabled={isLoading}>Create menu item</Button>
-            <Button variant="secondary" onClick={updateSelected} disabled={!selected || isLoading}>Update selected</Button>
-            <Button variant="danger" onClick={deactivateSelected} disabled={!selected || isLoading}>Deactivate selected</Button>
+            <Button onClick={createItem} disabled={pendingAction === 'create'}>Create menu item</Button>
+            <Button variant="secondary" onClick={updateSelected} disabled={!selected || pendingAction === 'update'}>Update selected</Button>
+            <Button variant="danger" onClick={deactivateSelected} disabled={!selected || pendingAction === 'deactivate'}>Deactivate selected</Button>
           </div>
         </Card>
 

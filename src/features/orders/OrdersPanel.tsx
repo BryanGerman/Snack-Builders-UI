@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type Dispatch, type SetStateAction } from 'react';
 import { Button } from '../../components/Button';
 import { Card } from '../../components/Card';
 import { EmptyState } from '../../components/EmptyState';
@@ -21,7 +21,7 @@ interface OrdersPanelProps {
   orders: Order[];
   selectedOrderId: string;
   kitchenStatus: KitchenStatus | null;
-  onOrdersChange: (orders: Order[]) => void;
+  onOrdersChange: Dispatch<SetStateAction<Order[]>>;
   onSelectedOrderIdChange: (orderId: string) => void;
   onKitchenStatusChange: (status: KitchenStatus) => void;
   onError: (message: string) => void;
@@ -31,6 +31,16 @@ function upsertOrder(orders: Order[], next: Order): Order[] {
   const exists = orders.some((order) => order.id === next.id);
   if (!exists) return [next, ...orders];
   return orders.map((order) => (order.id === next.id ? next : order));
+}
+
+function orderZeroLabel(order: Order | null | undefined): string {
+  if (order?.status === 'ready') return 'ready now';
+  if (order?.status === 'baking') return 'finishing...';
+  return 'awaiting status sync';
+}
+
+function taskZeroLabel(task: { oven_id: string | null }): string {
+  return task.oven_id ? 'finishing...' : 'queued';
 }
 
 export function OrdersPanel({
@@ -52,7 +62,7 @@ export function OrdersPanel({
   const [selectedItemId, setSelectedItemId] = useState('');
   const [selectedItemQuantity, setSelectedItemQuantity] = useState(1);
   const [advanceMinutes, setAdvanceMinutes] = useState(1);
-  const [isLoading, setIsLoading] = useState(false);
+  const [pendingAction, setPendingAction] = useState('');
 
   const selectedOrder = useMemo(
     () => orders.find((order) => order.id === selectedOrderId) ?? null,
@@ -70,11 +80,11 @@ export function OrdersPanel({
       .filter((value): value is number => typeof value === 'number');
 
     if (remainingValues.length > 0) {
-      return remainingSeconds(Math.max(...remainingValues));
+      return remainingSeconds(Math.max(...remainingValues), orderZeroLabel(selectedOrder));
     }
 
-    return remainingFromKitchenTime(selectedOrder?.estimated_ready_time, kitchenStatus?.current_time);
-  }, [kitchenStatus?.current_time, selectedOrder?.estimated_ready_time, selectedOrderTasks]);
+    return remainingFromKitchenTime(selectedOrder?.estimated_ready_time, kitchenStatus?.current_time, orderZeroLabel(selectedOrder));
+  }, [kitchenStatus?.current_time, selectedOrder?.estimated_ready_time, selectedOrder?.status, selectedOrderTasks]);
 
   const activeMenu = menu.filter((item) => item.is_active);
 
@@ -99,16 +109,16 @@ export function OrdersPanel({
       return;
     }
 
-    setIsLoading(true);
+    setPendingAction('place');
     try {
       const order = await api.placeOrder({ priority_level: priority, items });
-      onOrdersChange(upsertOrder(orders, order));
+      onOrdersChange((current) => upsertOrder(current, order));
       onSelectedOrderIdChange(order.id);
       setManualOrderId(order.id);
     } catch (error) {
       onError(error instanceof Error ? error.message : String(error));
     } finally {
-      setIsLoading(false);
+      setPendingAction('');
     }
   }
 
@@ -117,16 +127,16 @@ export function OrdersPanel({
       onError('Enter or select an order id.');
       return;
     }
-    setIsLoading(true);
+    setPendingAction('track');
     try {
       const order = await api.trackOrder(orderId);
-      onOrdersChange(upsertOrder(orders, order));
+      onOrdersChange((current) => upsertOrder(current, order));
       onSelectedOrderIdChange(order.id);
       setManualOrderId(order.id);
     } catch (error) {
       onError(error instanceof Error ? error.message : String(error));
     } finally {
-      setIsLoading(false);
+      setPendingAction('');
     }
   }
 
@@ -135,13 +145,13 @@ export function OrdersPanel({
       onError('Select an order first.');
       return;
     }
-    setIsLoading(true);
+    setPendingAction('bill');
     try {
       await api.getBill(selectedOrderId);
     } catch (error) {
       onError(error instanceof Error ? error.message : String(error));
     } finally {
-      setIsLoading(false);
+      setPendingAction('');
     }
   }
 
@@ -150,50 +160,50 @@ export function OrdersPanel({
       onError('Select an order and a menu item first.');
       return;
     }
-    setIsLoading(true);
+    setPendingAction('add-item');
     try {
       const order = await api.addOrderItem(selectedOrderId, selectedItemId, selectedItemQuantity);
-      onOrdersChange(upsertOrder(orders, order));
+      onOrdersChange((current) => upsertOrder(current, order));
     } catch (error) {
       onError(error instanceof Error ? error.message : String(error));
     } finally {
-      setIsLoading(false);
+      setPendingAction('');
     }
   }
 
   async function updateFirstItemQuantity() {
     if (!selectedOrder || selectedOrder.items.length === 0) return;
-    setIsLoading(true);
+    setPendingAction('increment-item');
     try {
       const firstItem = selectedOrder.items[0];
       if (!firstItem) return;
       const order = await api.updateOrderItemQuantity(selectedOrder.id, firstItem.id, Math.max(1, firstItem.quantity + 1));
-      onOrdersChange(upsertOrder(orders, order));
+      onOrdersChange((current) => upsertOrder(current, order));
     } catch (error) {
       onError(error instanceof Error ? error.message : String(error));
     } finally {
-      setIsLoading(false);
+      setPendingAction('');
     }
   }
 
   async function removeFirstItem() {
     if (!selectedOrder || selectedOrder.items.length === 0) return;
-    setIsLoading(true);
+    setPendingAction('remove-item');
     try {
       const firstItem = selectedOrder.items[0];
       if (!firstItem) return;
       const order = await api.removeOrderItem(selectedOrder.id, firstItem.id);
-      onOrdersChange(upsertOrder(orders, order));
+      onOrdersChange((current) => upsertOrder(current, order));
     } catch (error) {
       onError(error instanceof Error ? error.message : String(error));
     } finally {
-      setIsLoading(false);
+      setPendingAction('');
     }
   }
 
   async function advanceKitchenTimeFromOrder(minutes: number) {
     const seconds = Math.max(1, Math.round(minutes * 60));
-    setIsLoading(true);
+    setPendingAction('advance-time');
     try {
       const kitchen = await api.advanceKitchenTime(seconds);
       onKitchenStatusChange(kitchen);
@@ -201,14 +211,14 @@ export function OrdersPanel({
       const orderId = selectedOrderId || manualOrderId;
       if (orderId) {
         const refreshedOrder = await api.trackOrder(orderId);
-        onOrdersChange(upsertOrder(orders, refreshedOrder));
+        onOrdersChange((current) => upsertOrder(current, refreshedOrder));
         onSelectedOrderIdChange(refreshedOrder.id);
         setManualOrderId(refreshedOrder.id);
       }
     } catch (error) {
       onError(error instanceof Error ? error.message : String(error));
     } finally {
-      setIsLoading(false);
+      setPendingAction('');
     }
   }
 
@@ -247,14 +257,14 @@ export function OrdersPanel({
 
           <div className="button-row">
             <Button variant="secondary" onClick={addDraftItem}>Add another item</Button>
-            <Button onClick={placeOrder} disabled={isLoading}>Place order</Button>
+            <Button onClick={placeOrder} disabled={pendingAction === 'place'}>Place order</Button>
           </div>
 
           <div className="inline-form">
             <Field label="Track order by ID">
               <TextInput value={manualOrderId} onChange={(event) => setManualOrderId(event.target.value)} placeholder="order id" />
             </Field>
-            <Button variant="secondary" onClick={() => trackOrder(manualOrderId)} disabled={isLoading || !manualOrderId}>Track</Button>
+            <Button variant="secondary" onClick={() => trackOrder(manualOrderId)} disabled={pendingAction === 'track' || !manualOrderId}>Track</Button>
           </div>
         </Card>
 
@@ -292,8 +302,8 @@ export function OrdersPanel({
                             <td>{task.oven_id ? 'baking' : 'queued'}</td>
                             <td>
                               {typeof task.remaining_bake_seconds === 'number'
-                                ? remainingSeconds(task.remaining_bake_seconds)
-                                : remainingFromKitchenTime(task.finishes_at, kitchenStatus?.current_time)}
+                                ? remainingSeconds(task.remaining_bake_seconds, taskZeroLabel(task))
+                                : remainingFromKitchenTime(task.finishes_at, kitchenStatus?.current_time, taskZeroLabel(task))}
                             </td>
                           </tr>
                         ))}
@@ -314,16 +324,16 @@ export function OrdersPanel({
                     <strong>{dateTime(kitchenStatus?.current_time ?? null)}</strong>
                   </div>
                   <div className="time-stepper">
-                    <Button variant="secondary" type="button" onClick={() => setAdvanceMinutes((value) => Math.max(0.5, value - 1))} disabled={isLoading}>-</Button>
+                    <Button variant="secondary" type="button" onClick={() => setAdvanceMinutes((value) => Math.max(0.5, value - 1))}>-</Button>
                     <TextInput type="number" min={0.5} step={0.5} value={advanceMinutes} onChange={(event) => setAdvanceMinutes(Number(event.target.value))} />
-                    <Button variant="secondary" type="button" onClick={() => setAdvanceMinutes((value) => value + 1)} disabled={isLoading}>+</Button>
+                    <Button variant="secondary" type="button" onClick={() => setAdvanceMinutes((value) => value + 1)}>+</Button>
                   </div>
                   <div className="time-presets">
-                    <Button variant="secondary" type="button" onClick={() => setAdvanceMinutes(5)} disabled={isLoading}>5m</Button>
-                    <Button variant="secondary" type="button" onClick={() => setAdvanceMinutes(10)} disabled={isLoading}>10m</Button>
-                    <Button variant="secondary" type="button" onClick={() => setAdvanceMinutes(20)} disabled={isLoading}>20m</Button>
-                    <Button variant="ghost" type="button" onClick={() => setAdvanceMinutes((value) => value + 1)} disabled={isLoading}>+1m</Button>
-                    <Button type="button" onClick={() => advanceKitchenTimeFromOrder(advanceMinutes)} disabled={isLoading}>
+                    <Button variant="secondary" type="button" onClick={() => setAdvanceMinutes(5)}>5m</Button>
+                    <Button variant="secondary" type="button" onClick={() => setAdvanceMinutes(10)}>10m</Button>
+                    <Button variant="secondary" type="button" onClick={() => setAdvanceMinutes(20)}>20m</Button>
+                    <Button variant="ghost" type="button" onClick={() => setAdvanceMinutes((value) => value + 1)}>+1m</Button>
+                    <Button type="button" onClick={() => advanceKitchenTimeFromOrder(advanceMinutes)} disabled={pendingAction === 'advance-time'}>
                       Advance {Math.max(1, Math.round(advanceMinutes * 60))}s
                     </Button>
                   </div>
@@ -332,9 +342,9 @@ export function OrdersPanel({
 
               <Card title="Order Actions" subtitle="Verify bill retrieval and item mutation endpoints.">
                 <div className="button-row">
-                  <Button variant="secondary" onClick={getBill} disabled={isLoading}>Get bill</Button>
-                  <Button variant="secondary" onClick={updateFirstItemQuantity} disabled={isLoading || selectedOrder.items.length === 0}>+1 first item</Button>
-                  <Button variant="danger" onClick={removeFirstItem} disabled={isLoading || selectedOrder.items.length === 0}>Remove first item</Button>
+                  <Button variant="secondary" onClick={getBill} disabled={pendingAction === 'bill'}>Get bill</Button>
+                  <Button variant="secondary" onClick={updateFirstItemQuantity} disabled={pendingAction === 'increment-item' || selectedOrder.items.length === 0}>+1 first item</Button>
+                  <Button variant="danger" onClick={removeFirstItem} disabled={pendingAction === 'remove-item' || selectedOrder.items.length === 0}>Remove first item</Button>
                 </div>
 
                 <div className="inline-form separated">
@@ -349,7 +359,7 @@ export function OrdersPanel({
                   <Field label="Qty">
                     <TextInput type="number" min={1} value={selectedItemQuantity} onChange={(event) => setSelectedItemQuantity(Number(event.target.value))} />
                   </Field>
-                  <Button variant="secondary" onClick={addItemToSelected} disabled={isLoading || !selectedItemId}>Add</Button>
+                  <Button variant="secondary" onClick={addItemToSelected} disabled={pendingAction === 'add-item' || !selectedItemId}>Add</Button>
                 </div>
               </Card>
 
@@ -390,7 +400,7 @@ export function OrdersPanel({
                     <td><StatusBadge value={order.status} tone={order.status === 'ready' ? 'success' : order.status === 'baking' ? 'warning' : 'neutral'} /></td>
                     <td><StatusBadge value={order.payment_status} tone={order.payment_status === 'paid' ? 'success' : 'warning'} /></td>
                     <td>{money(order.total_price)}</td>
-                    <td>{remainingFromKitchenTime(order.estimated_ready_time, kitchenStatus?.current_time)}</td>
+                    <td>{remainingFromKitchenTime(order.estimated_ready_time, kitchenStatus?.current_time, orderZeroLabel(order))}</td>
                   </tr>
                 ))}
               </tbody>
