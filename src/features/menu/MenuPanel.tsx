@@ -105,17 +105,13 @@ export function MenuPanel({ api, menu, onMenuChange, onError }: MenuPanelProps) 
   }
 
   return (
-    <Card
-      title="Menu Management"
-      subtitle="Customers can view menu items; managers can create, update, and deactivate items. Bake time comes from category rules."
-      actions={
-        <div className="button-row">
-          <Button variant="secondary" onClick={seedRequiredItems} disabled={isLoading}>Seed 3 demo items</Button>
-        </div>
-      }
-    >
-      <div className="grid grid-2">
-        <div className="stack">
+    <div className="page-stack">
+      <div className="workspace-grid">
+        <Card
+          title="Menu Editor"
+          subtitle="Create, update, and deactivate items. Bake time is inferred from category rules."
+          actions={<Button variant="secondary" onClick={seedRequiredItems} disabled={isLoading}>Seed demo items</Button>}
+        >
           <Field label="Name">
             <TextInput value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} />
           </Field>
@@ -136,42 +132,56 @@ export function MenuPanel({ api, menu, onMenuChange, onError }: MenuPanelProps) 
             <Button variant="secondary" onClick={updateSelected} disabled={!selected || isLoading}>Update selected</Button>
             <Button variant="danger" onClick={deactivateSelected} disabled={!selected || isLoading}>Deactivate selected</Button>
           </div>
-          <details className="details-panel">
+        </Card>
+
+        <div className="stack">
+          <Card title="Menu Catalog" subtitle="Current items returned by the API; select one to edit it.">
+            <div className="table-wrap">
+              {menu.length === 0 ? (
+                <EmptyState title="Menu is empty in this UI state." detail="Auto-refresh runs after the credential is configured, or seed demo items." />
+              ) : (
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Item</th>
+                      <th>Category</th>
+                      <th>Price</th>
+                      <th>Active</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {menu.map((item) => (
+                      <tr key={item.id} className={item.id === selectedId ? 'selected-row' : ''} onClick={() => useSelectedAsTemplate(item)}>
+                        <td>
+                          <strong>{item.name}</strong>
+                          <small className="mono">{truncateMiddle(item.id, 20)}</small>
+                        </td>
+                        <td>{categoryLabel(item.category)}</td>
+                        <td>{money(item.price)}</td>
+                        <td><StatusBadge value={item.is_active ? 'active' : 'inactive'} tone={item.is_active ? 'success' : 'warning'} /></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </Card>
+
+          <Card title="Bake Rules" subtitle="Scheduler duration is derived from the selected category.">
+            <div className="metric-grid">
+              <div className="metric"><span>Cookies</span><strong>5m</strong></div>
+              <div className="metric"><span>Pastries</span><strong>10m</strong></div>
+              <div className="metric"><span>Breads</span><strong>20m</strong></div>
+              <div className="metric"><span>Active items</span><strong>{menu.filter((item) => item.is_active).length}</strong></div>
+            </div>
+          </Card>
+
+          <details className="details-panel json-card">
             <summary>Selected item JSON</summary>
             <JsonBlock value={selected} />
           </details>
         </div>
-
-        <div className="table-wrap">
-          {menu.length === 0 ? (
-            <EmptyState title="Menu is empty in this UI state." detail="Auto-refresh runs after the credential is configured, or seed demo items." />
-          ) : (
-            <table>
-              <thead>
-                <tr>
-                  <th>Item</th>
-                  <th>Category</th>
-                  <th>Price</th>
-                  <th>Active</th>
-                </tr>
-              </thead>
-              <tbody>
-                {menu.map((item) => (
-                  <tr key={item.id} className={item.id === selectedId ? 'selected-row' : ''} onClick={() => useSelectedAsTemplate(item)}>
-                    <td>
-                      <strong>{item.name}</strong>
-                      <small className="mono">{truncateMiddle(item.id, 20)}</small>
-                    </td>
-                    <td>{categoryLabel(item.category)}</td>
-                    <td>{money(item.price)}</td>
-                    <td><StatusBadge value={item.is_active ? 'active' : 'inactive'} tone={item.is_active ? 'success' : 'warning'} /></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
       </div>
-    </Card>
+    </div>
   );
 }

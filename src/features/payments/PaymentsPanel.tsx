@@ -94,13 +94,13 @@ export function PaymentsPanel({
   }
 
   return (
-    <Card
-      title="Payment Management"
-      subtitle="Submit cash or credit card payments and verify the order payment_status transitions to paid."
-      actions={<Button variant="secondary" onClick={loadBillIntoAmount} disabled={isLoading || (!orderId && !selectedOrderId)}>Load amount due</Button>}
-    >
-      <div className="grid grid-2">
-        <div className="stack">
+    <div className="page-stack">
+      <div className="workspace-grid">
+        <Card
+          title="Payment Capture"
+          subtitle="Submit cash or credit card payments and verify payment_status transitions."
+          actions={<Button variant="secondary" onClick={loadBillIntoAmount} disabled={isLoading || (!orderId && !selectedOrderId)}>Load amount due</Button>}
+        >
           <Field label="Order ID">
             <TextInput value={orderId || selectedOrderId} onChange={(event) => setOrderId(event.target.value)} />
           </Field>
@@ -118,76 +118,83 @@ export function PaymentsPanel({
           <div className="button-row">
             <Button onClick={createPayment} disabled={isLoading}>Create payment</Button>
           </div>
+        </Card>
+
+        <div className="stack">
           {selectedOrder && (
-            <div className="order-summary compact-card">
-              <strong>Selected order</strong>
+            <Card title="Selected Order" subtitle="Payment target and current balance context.">
               <div className="metric-grid">
                 <div className="metric"><span>Total</span><strong>{money(selectedOrder.total_price)}</strong></div>
                 <div className="metric"><span>Payment</span><strong>{selectedOrder.payment_status}</strong></div>
               </div>
-              <JsonBlock value={selectedOrder} maxHeight={190} />
-            </div>
+              <details className="details-panel json-card separated">
+                <summary>Selected order JSON</summary>
+                <JsonBlock value={selectedOrder} maxHeight={190} />
+              </details>
+            </Card>
           )}
-        </div>
 
+          <Card title="Payable Orders" subtitle="Select an order to load its payment context.">
+            <div className="table-wrap">
+              {orders.length === 0 ? (
+                <EmptyState title="No orders in this UI session." detail="Create an order first." />
+              ) : (
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Order</th>
+                      <th>Total</th>
+                      <th>Payment</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {orders.map((order) => (
+                      <tr key={order.id} onClick={() => useOrder(order)} className={order.id === (orderId || selectedOrderId) ? 'selected-row' : ''}>
+                        <td className="mono">{truncateMiddle(order.id, 20)}</td>
+                        <td>{money(order.total_price)}</td>
+                        <td><StatusBadge value={order.payment_status} tone={order.payment_status === 'paid' ? 'success' : 'warning'} /></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </Card>
+        </div>
+      </div>
+
+      <Card title="Payment Ledger" subtitle="Payments created in this UI session.">
         <div className="table-wrap">
-          <h3>Payable orders</h3>
-          {orders.length === 0 ? (
-            <EmptyState title="No orders in this UI session." detail="Create an order first." />
+          {payments.length === 0 ? (
+            <EmptyState title="No payments yet." />
           ) : (
             <table>
               <thead>
                 <tr>
-                  <th>Order</th>
-                  <th>Total</th>
                   <th>Payment</th>
+                  <th>Order</th>
+                  <th>Method</th>
+                  <th>Status</th>
+                  <th>Amount</th>
+                  <th>Created</th>
                 </tr>
               </thead>
               <tbody>
-                {orders.map((order) => (
-                  <tr key={order.id} onClick={() => useOrder(order)} className={order.id === (orderId || selectedOrderId) ? 'selected-row' : ''}>
-                    <td className="mono">{truncateMiddle(order.id, 20)}</td>
-                    <td>{money(order.total_price)}</td>
-                    <td><StatusBadge value={order.payment_status} tone={order.payment_status === 'paid' ? 'success' : 'warning'} /></td>
+                {payments.map((payment) => (
+                  <tr key={payment.id}>
+                    <td className="mono">{truncateMiddle(payment.id, 18)}</td>
+                    <td className="mono">{truncateMiddle(payment.order_id, 18)}</td>
+                    <td>{payment.method}</td>
+                    <td><StatusBadge value={payment.status} tone={payment.status === 'paid' ? 'success' : 'warning'} /></td>
+                    <td>{money(payment.amount)}</td>
+                    <td>{dateTime(payment.created_at)}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           )}
         </div>
-      </div>
-
-      <div className="table-wrap separated">
-        <h3>Payments created in this UI session</h3>
-        {payments.length === 0 ? (
-          <EmptyState title="No payments yet." />
-        ) : (
-          <table>
-            <thead>
-              <tr>
-                <th>Payment</th>
-                <th>Order</th>
-                <th>Method</th>
-                <th>Status</th>
-                <th>Amount</th>
-                <th>Created</th>
-              </tr>
-            </thead>
-            <tbody>
-              {payments.map((payment) => (
-                <tr key={payment.id}>
-                  <td className="mono">{truncateMiddle(payment.id, 18)}</td>
-                  <td className="mono">{truncateMiddle(payment.order_id, 18)}</td>
-                  <td>{payment.method}</td>
-                  <td><StatusBadge value={payment.status} tone={payment.status === 'paid' ? 'success' : 'warning'} /></td>
-                  <td>{money(payment.amount)}</td>
-                  <td>{dateTime(payment.created_at)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
-    </Card>
+      </Card>
+    </div>
   );
 }

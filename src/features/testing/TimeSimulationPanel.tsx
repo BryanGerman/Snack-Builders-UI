@@ -143,7 +143,7 @@ export function TimeSimulationPanel({
           )}
         </div>
 
-        <details className="details-panel" open>
+        <details className="details-panel json-card">
           <summary>Last kitchen time response</summary>
           <JsonBlock value={lastResponse ?? { message: 'No kitchen time advance run yet.', endpoint: 'POST /kitchen/time/advance' }} />
         </details>

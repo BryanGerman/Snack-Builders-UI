@@ -216,8 +216,8 @@ export function TestingPanel({
       />
 
       <Card
-        title="Automated Functional Test Console"
-        subtitle="Runs high-value scenarios for the challenge: menu, order ticket, payment, kitchen capacity, priority queue, and ETA updates."
+        title="Functional Scenarios"
+        subtitle="Run high-value checks for menu, tickets, payment, capacity, priority queue, and ETA updates."
         actions={
           <div className="button-row">
             <Button variant="secondary" onClick={runSmokeTests} disabled={isRunning}>Smoke</Button>
@@ -229,36 +229,39 @@ export function TestingPanel({
         <div className="info-callout">
           <strong>Priority scenario intent:</strong> create 6 active bakes to fill capacity, then insert a VIP order. Existing bakes must not be preempted; queued lower-priority work should be delayed behind VIP work when the scheduler recalculates estimates.
         </div>
+      </Card>
 
       {scenarioOrders.length > 0 && (
-        <div className="table-wrap separated">
-          <h3>Scenario orders and ETAs</h3>
-          <table>
-            <thead>
-              <tr>
-                <th>Order</th>
-                <th>Priority</th>
-                <th>Status</th>
-                <th>Total</th>
-                <th>Estimated ready</th>
-              </tr>
-            </thead>
-            <tbody>
-              {scenarioOrders.map((order) => (
-                <tr key={order.id}>
-                  <td className="mono">{truncateMiddle(order.id, 20)}</td>
-                  <td><StatusBadge value={priorityLabel(order.priority_level)} tone={order.priority_level === 1 ? 'vip' : order.priority_level === 2 ? 'warning' : 'neutral'} /></td>
-                  <td>{order.status}</td>
-                  <td>{money(order.total_price)}</td>
-                  <td>{relativeMinutes(order.estimated_ready_time)}</td>
+        <Card title="Scenario Orders" subtitle="ETA evidence after capacity filling and VIP insertion.">
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Order</th>
+                  <th>Priority</th>
+                  <th>Status</th>
+                  <th>Total</th>
+                  <th>Estimated ready</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {scenarioOrders.map((order) => (
+                  <tr key={order.id}>
+                    <td className="mono">{truncateMiddle(order.id, 20)}</td>
+                    <td><StatusBadge value={priorityLabel(order.priority_level)} tone={order.priority_level === 1 ? 'vip' : order.priority_level === 2 ? 'warning' : 'neutral'} /></td>
+                    <td>{order.status}</td>
+                    <td>{money(order.total_price)}</td>
+                    <td>{relativeMinutes(order.estimated_ready_time)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
       )}
 
-        <div className="test-results separated">
+      <Card title="Test Results" subtitle="Step-by-step request evidence from the latest run.">
+        <div className="test-results">
           {results.length === 0 ? (
             <div className="empty-state"><strong>No test run yet.</strong><span>Run Smoke, E2E, Priority scenario, or advance the test clock.</span></div>
           ) : (
