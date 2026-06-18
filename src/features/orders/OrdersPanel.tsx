@@ -20,6 +20,7 @@ interface OrdersPanelProps {
   menu: MenuItem[];
   orders: Order[];
   selectedOrderId: string;
+  kitchenStatus: KitchenStatus | null;
   onOrdersChange: (orders: Order[]) => void;
   onSelectedOrderIdChange: (orderId: string) => void;
   onKitchenStatusChange: (status: KitchenStatus) => void;
@@ -37,6 +38,7 @@ export function OrdersPanel({
   menu,
   orders,
   selectedOrderId,
+  kitchenStatus,
   onOrdersChange,
   onSelectedOrderIdChange,
   onKitchenStatusChange,
@@ -197,7 +199,6 @@ export function OrdersPanel({
     <Card
       title="Order Placement & Tracking"
       subtitle="Build multi-item tickets, verify total price, estimated_ready_time, status tracking, and item modification behavior."
-      actions={<Button variant="secondary" onClick={() => trackOrder()} disabled={isLoading || (!selectedOrderId && !manualOrderId)}>Refresh selected order</Button>}
     >
       <div className="grid grid-2">
         <div className="stack">
@@ -257,7 +258,11 @@ export function OrdersPanel({
               <div className="time-control-card">
                 <div>
                   <strong>Advance kitchen time</strong>
-                  <span>Refreshes oven state and this order after time moves.</span>
+                  <span>Auto-refresh keeps oven state and this order in sync.</span>
+                </div>
+                <div className="metric">
+                  <span>Kitchen current time</span>
+                  <strong>{dateTime(kitchenStatus?.current_time ?? null)}</strong>
                 </div>
                 <div className="time-stepper">
                   <Button variant="secondary" type="button" onClick={() => setAdvanceMinutes((value) => Math.max(0.5, value - 1))} disabled={isLoading}>-</Button>

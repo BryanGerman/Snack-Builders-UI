@@ -79,6 +79,12 @@ const tabs: Array<{ id: TabId; label: string; icon: typeof LayoutDashboard }> = 
   { id: 'testing', label: 'Verification', icon: TestTube2 },
 ];
 
+function upsertOrder(orders: Order[], next: Order): Order[] {
+  const exists = orders.some((order) => order.id === next.id);
+  if (!exists) return [next, ...orders];
+  return orders.map((order) => (order.id === next.id ? next : order));
+}
+
 function App() {
   const [activeTab, setActiveTab] = useLocalStorage<TabId>('snack-ui.active-tab', 'dashboard');
   const [apiBaseUrl, setApiBaseUrl] = useLocalStorage('snack-ui.base-url', DEFAULT_BASE_URL);
@@ -91,6 +97,7 @@ function App() {
   const [kitchenStatus, setKitchenStatus] = useLocalStorage<KitchenStatus | null>('snack-ui.kitchen-status', null);
   const [logs, setLogs] = useState<ApiLogEntry[]>([]);
   const [lastError, setLastError] = useState('');
+  const [lastAutoRefreshAt, setLastAutoRefreshAt] = useState('');
   const [isGeneratingToken, setIsGeneratingToken] = useState(false);
   const effectiveApiBaseUrl = useMemo(() => resolveApiBaseUrl(apiBaseUrl), [apiBaseUrl]);
 
@@ -113,6 +120,54 @@ function App() {
       }),
     [effectiveApiBaseUrl, token],
   );
+
+  useEffect(() => {
+    if (!token.trim() || !effectiveApiBaseUrl.trim()) return undefined;
+
+    let cancelled = false;
+
+    async function syncRuntimeState() {
+      try {
+        const kitchen = await api.getKitchenStatus();
+        if (cancelled) return;
+        setKitchenStatus(kitchen);
+
+        try {
+          const latestMenu = await api.listMenu();
+          if (!cancelled) {
+            setMenu(latestMenu);
+          }
+        } catch {
+          // Keep existing menu state if the background refresh fails.
+        }
+
+        if (selectedOrderId) {
+          try {
+            const order = await api.trackOrder(selectedOrderId);
+            if (!cancelled) {
+              setOrders((current) => upsertOrder(current, order));
+            }
+          } catch {
+            // A selected order can be stale; kitchen refresh should continue.
+          }
+        }
+
+        if (!cancelled) {
+          setLastAutoRefreshAt(new Date().toISOString());
+        }
+      } catch {
+        // Avoid noisy banners during background polling; explicit actions still surface errors.
+      }
+    }
+
+    syncRuntimeState();
+    const timer = window.setInterval(syncRuntimeState, 5000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [api, effectiveApiBaseUrl, selectedOrderId, setKitchenStatus, setMenu, setOrders, token]);
 
   function handleError(message: string) {
     setLastError(message);
@@ -186,6 +241,7 @@ function App() {
             <TextArea rows={5} value={token} onChange={(event) => setToken(event.target.value)} placeholder="Paste the API credential once" />
           </Field>
           <p className="connection-footnote">Requests use <span className="mono">{effectiveApiBaseUrl || 'not configured'}</span></p>
+          <p className="connection-footnote">Auto-refresh <span className="mono">{lastAutoRefreshAt ? 'active' : 'waiting for auth'}</span></p>
         </section>
 
         <div className="sidebar-footer">
@@ -233,7 +289,7 @@ function App() {
         )}
 
         {activeTab === 'menu' && <MenuPanel {...sharedProps} />}
-        {activeTab === 'orders' && <OrdersPanel {...sharedProps} />}
+        {activeTab === 'orders' && <OrdersPanel {...sharedProps} kitchenStatus={kitchenStatus} />}
         {activeTab === 'payments' && <PaymentsPanel {...sharedProps} />}
         {activeTab === 'kitchen' && <KitchenPanel {...sharedProps} kitchenStatus={kitchenStatus} />}
         {activeTab === 'testing' && <TestingPanel {...sharedProps} />}

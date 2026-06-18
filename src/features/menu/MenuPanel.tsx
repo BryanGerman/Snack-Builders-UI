@@ -110,7 +110,6 @@ export function MenuPanel({ api, menu, onMenuChange, onError }: MenuPanelProps) 
       subtitle="Customers can view menu items; managers can create, update, and deactivate items. Bake time comes from category rules."
       actions={
         <div className="button-row">
-          <Button variant="secondary" onClick={loadMenu} disabled={isLoading}>Refresh</Button>
           <Button variant="secondary" onClick={seedRequiredItems} disabled={isLoading}>Seed 3 demo items</Button>
         </div>
       }
@@ -145,7 +144,7 @@ export function MenuPanel({ api, menu, onMenuChange, onError }: MenuPanelProps) 
 
         <div className="table-wrap">
           {menu.length === 0 ? (
-            <EmptyState title="Menu is empty in this UI state." detail="Click Refresh or Seed 3 demo items." />
+            <EmptyState title="Menu is empty in this UI state." detail="Auto-refresh runs after the credential is configured, or seed demo items." />
           ) : (
             <table>
               <thead>

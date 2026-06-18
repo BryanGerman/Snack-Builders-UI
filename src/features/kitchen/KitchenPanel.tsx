@@ -46,17 +46,6 @@ export function KitchenPanel({ api, kitchenStatus, orders, onKitchenStatusChange
     return [...kitchenStatus.queued_tasks].sort((a, b) => a.priority_level - b.priority_level || a.sequence - b.sequence);
   }, [kitchenStatus]);
 
-  async function refreshKitchen() {
-    setIsLoading(true);
-    try {
-      onKitchenStatusChange(await api.getKitchenStatus());
-    } catch (error) {
-      onError(error instanceof Error ? error.message : String(error));
-    } finally {
-      setIsLoading(false);
-    }
-  }
-
   async function scheduleOrder(orderId: string) {
     if (!orderId) {
       onError('Enter or select an order id.');
@@ -75,8 +64,7 @@ export function KitchenPanel({ api, kitchenStatus, orders, onKitchenStatusChange
   return (
     <Card
       title="Priority-Based Kitchen Scheduler"
-      subtitle="Monitor 2 ovens × 3 slots, active bakes, waiting queue, priority ordering, and updated ETAs."
-      actions={<Button variant="secondary" onClick={refreshKitchen} disabled={isLoading}>Refresh kitchen</Button>}
+      subtitle="Auto-monitors 2 ovens x 3 slots, active bakes, waiting queue, priority ordering, and updated ETAs."
     >
       {kitchenStatus ? (
         <>
@@ -190,7 +178,7 @@ export function KitchenPanel({ api, kitchenStatus, orders, onKitchenStatusChange
           </details>
         </>
       ) : (
-        <EmptyState title="Kitchen status not loaded." detail="Click Refresh kitchen or run the E2E flow." />
+        <EmptyState title="Kitchen status not loaded." detail="Add the credential once; the UI auto-refreshes kitchen state in the background." />
       )}
     </Card>
   );

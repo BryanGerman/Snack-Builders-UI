@@ -650,7 +650,7 @@ td small { display: block; color: var(--muted); margin-top: 3px; }
 
 .time-control-card {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 180px;
+  grid-template-columns: minmax(0, 1fr) 220px 180px;
   gap: 10px;
   align-items: end;
   padding: 12px;
@@ -703,7 +703,8 @@ td small { display: block; color: var(--muted); margin-top: 3px; }
   .hero-stats { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .grid-2,
   .oven-grid,
-  .coverage-grid { grid-template-columns: 1fr; }
+  .coverage-grid,
+  .time-control-card { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 760px) {
