@@ -1,14 +1,17 @@
 import { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, ClipboardList, CreditCard, Flame, LayoutDashboard, Menu as MenuIcon, TestTube2 } from 'lucide-react';
+import { AlertTriangle, ClipboardList, CreditCard, Flame, KeyRound, LayoutDashboard, Menu as MenuIcon, TestTube2 } from 'lucide-react';
 import { SnackBuildersApiClient } from './api/client';
+import { Button } from './components/Button';
+import { Field, TextArea, TextInput } from './components/FormField';
 import { ApiLogPanel } from './features/dashboard/ApiLogPanel';
-import { ConfigPanel } from './features/dashboard/ConfigPanel';
+import { ChallengeCoverage } from './features/dashboard/ChallengeCoverage';
 import { KitchenPanel } from './features/kitchen/KitchenPanel';
 import { MenuPanel } from './features/menu/MenuPanel';
 import { OrdersPanel } from './features/orders/OrdersPanel';
 import { PaymentsPanel } from './features/payments/PaymentsPanel';
 import { TestingPanel } from './features/testing/TestingPanel';
 import { useLocalStorage } from './hooks/useLocalStorage';
+import { createDemoAdminJwt } from './lib/jwt';
 import type { ApiLogEntry, KitchenStatus, MenuItem, Order, Payment } from './types/domain';
 
 type TabId = 'dashboard' | 'menu' | 'orders' | 'payments' | 'kitchen' | 'testing';
@@ -27,7 +30,7 @@ function isAbsoluteHttpUrl(baseUrl: string) {
 }
 
 function isLocalProxyBaseUrl(baseUrl: string) {
-  const normalized = baseUrl.trim().replace(/\/+$/, '');
+  const normalized = cleanBaseUrl(baseUrl);
   return normalized === '' || normalized === '/' || normalized === '/api';
 }
 
@@ -68,12 +71,12 @@ function resolveApiBaseUrl(baseUrl: string) {
 }
 
 const tabs: Array<{ id: TabId; label: string; icon: typeof LayoutDashboard }> = [
-  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { id: 'dashboard', label: 'Coverage', icon: LayoutDashboard },
   { id: 'menu', label: 'Menu', icon: MenuIcon },
   { id: 'orders', label: 'Orders', icon: ClipboardList },
   { id: 'payments', label: 'Payments', icon: CreditCard },
   { id: 'kitchen', label: 'Kitchen', icon: Flame },
-  { id: 'testing', label: 'Test Console', icon: TestTube2 },
+  { id: 'testing', label: 'Verification', icon: TestTube2 },
 ];
 
 function App() {
@@ -88,6 +91,7 @@ function App() {
   const [kitchenStatus, setKitchenStatus] = useLocalStorage<KitchenStatus | null>('snack-ui.kitchen-status', null);
   const [logs, setLogs] = useState<ApiLogEntry[]>([]);
   const [lastError, setLastError] = useState('');
+  const [isGeneratingToken, setIsGeneratingToken] = useState(false);
   const effectiveApiBaseUrl = useMemo(() => resolveApiBaseUrl(apiBaseUrl), [apiBaseUrl]);
 
   useEffect(() => {
@@ -115,6 +119,15 @@ function App() {
     window.setTimeout(() => setLastError(''), 8000);
   }
 
+  async function generateAdminToken() {
+    setIsGeneratingToken(true);
+    try {
+      setToken(await createDemoAdminJwt(jwtSecret));
+    } finally {
+      setIsGeneratingToken(false);
+    }
+  }
+
   const sharedProps = {
     api,
     menu,
@@ -136,7 +149,7 @@ function App() {
           <div className="brand-mark">SB</div>
           <div>
             <strong>Snack Builders</strong>
-            <span>Bakery API Tester</span>
+            <span>Backend evaluator</span>
           </div>
         </div>
 
@@ -152,19 +165,42 @@ function App() {
           })}
         </nav>
 
+        <section className="connection-panel" aria-label="API connection">
+          <div className="connection-heading">
+            <KeyRound size={18} />
+            <div>
+              <strong>Connection</strong>
+              <span>{token.trim() ? 'Credential ready' : 'Credential required'}</span>
+            </div>
+          </div>
+          <Field label="API base">
+            <TextInput value={apiBaseUrl} onChange={(event) => setApiBaseUrl(event.target.value)} placeholder="https://api.example.com" />
+          </Field>
+          <Field label="JWT secret">
+            <TextInput value={jwtSecret} onChange={(event) => setJwtSecret(event.target.value)} />
+          </Field>
+          <Button className="full-width" onClick={generateAdminToken} disabled={isGeneratingToken}>
+            {isGeneratingToken ? 'Generating...' : 'Generate admin token'}
+          </Button>
+          <Field label="Bearer token">
+            <TextArea rows={5} value={token} onChange={(event) => setToken(event.target.value)} placeholder="Paste the API credential once" />
+          </Field>
+          <p className="connection-footnote">Requests use <span className="mono">{effectiveApiBaseUrl || 'not configured'}</span></p>
+        </section>
+
         <div className="sidebar-footer">
-          <span>Capacity: 2 ovens × 3 trays</span>
-          <span>Cookies 5m · Pastries 10m · Breads 20m</span>
+          <span>2 ovens / 3 trays each</span>
+          <span>Cookies 5m / Pastries 10m / Breads 20m</span>
         </div>
       </aside>
 
       <main className="main-content">
         <header className="hero">
           <div>
-            <p className="eyebrow">Backend Challenge Control Center</p>
-            <h1>Snack Builders Bakery Functional UI</h1>
+            <p className="eyebrow">Snack Builders Backend Console</p>
+            <h1>Order, payment, and kitchen scheduler verification</h1>
             <p>
-              Exercise menu management, multi-item order tickets, payments, kitchen monitoring, capacity estimation, and VIP priority queue behavior against the deployed API.
+              Validate menu operations, multi-item tickets, payments, oven capacity, ETA recalculation, and VIP priority behavior against the deployed API.
             </p>
           </div>
           <div className="hero-stats">
@@ -184,13 +220,12 @@ function App() {
 
         {activeTab === 'dashboard' && (
           <div className="page-stack">
-            <ConfigPanel
-              apiBaseUrl={apiBaseUrl}
-              token={token}
-              jwtSecret={jwtSecret}
-              onApiBaseUrlChange={setApiBaseUrl}
-              onTokenChange={setToken}
-              onJwtSecretChange={setJwtSecret}
+            <ChallengeCoverage
+              menu={menu}
+              orders={orders}
+              payments={payments}
+              kitchenStatus={kitchenStatus}
+              hasToken={Boolean(token.trim())}
             />
             <ApiLogPanel entries={logs} onClear={() => setLogs([])} />
           </div>
