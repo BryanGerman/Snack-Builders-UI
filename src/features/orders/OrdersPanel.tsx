@@ -5,7 +5,7 @@ import { EmptyState } from '../../components/EmptyState';
 import { Field, SelectInput, TextInput } from '../../components/FormField';
 import { JsonBlock } from '../../components/JsonBlock';
 import { StatusBadge } from '../../components/StatusBadge';
-import { dateTime, money, priorityLabel, remainingFromKitchenTime, truncateMiddle } from '../../lib/format';
+import { dateTime, money, priorityLabel, remainingFromKitchenTime, remainingSeconds, truncateMiddle } from '../../lib/format';
 import type { SnackBuildersApiClient } from '../../api/client';
 import type { KitchenStatus, MenuItem, Order, PriorityLevel } from '../../types/domain';
 
@@ -58,6 +58,23 @@ export function OrdersPanel({
     () => orders.find((order) => order.id === selectedOrderId) ?? null,
     [orders, selectedOrderId],
   );
+
+  const selectedOrderTasks = useMemo(() => {
+    if (!selectedOrder || !kitchenStatus) return [];
+    return [...kitchenStatus.active_tasks, ...kitchenStatus.queued_tasks].filter((task) => task.order_id === selectedOrder.id);
+  }, [kitchenStatus, selectedOrder]);
+
+  const selectedOrderRemaining = useMemo(() => {
+    const remainingValues = selectedOrderTasks
+      .map((task) => task.remaining_bake_seconds)
+      .filter((value): value is number => typeof value === 'number');
+
+    if (remainingValues.length > 0) {
+      return remainingSeconds(Math.max(...remainingValues));
+    }
+
+    return remainingFromKitchenTime(selectedOrder?.estimated_ready_time, kitchenStatus?.current_time);
+  }, [kitchenStatus?.current_time, selectedOrder?.estimated_ready_time, selectedOrderTasks]);
 
   const activeMenu = menu.filter((item) => item.is_active);
 
@@ -251,10 +268,37 @@ export function OrdersPanel({
                 <div className="metric"><span>Status</span><strong>{selectedOrder.status}</strong></div>
                 <div className="metric"><span>Payment</span><strong>{selectedOrder.payment_status}</strong></div>
                 <div className="metric"><span>Total</span><strong>{money(selectedOrder.total_price)}</strong></div>
-                <div className="metric"><span>Ready estimate</span><strong>{remainingFromKitchenTime(selectedOrder.estimated_ready_time, kitchenStatus?.current_time)}</strong></div>
+                <div className="metric"><span>Remaining bake</span><strong>{selectedOrderRemaining}</strong></div>
               </div>
               <p className="muted">Estimated ready time: {dateTime(selectedOrder.estimated_ready_time)}</p>
               <p className="muted">Priority: {priorityLabel(selectedOrder.priority_level)}</p>
+              {selectedOrderTasks.length > 0 && (
+                <div className="table-wrap compact-table">
+                  <h3>Kitchen tasks for this order</h3>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Item</th>
+                        <th>Status</th>
+                        <th>Remaining</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {selectedOrderTasks.map((task) => (
+                        <tr key={task.id}>
+                          <td>{task.name}</td>
+                          <td>{task.oven_id ? 'baking' : 'queued'}</td>
+                          <td>
+                            {typeof task.remaining_bake_seconds === 'number'
+                              ? remainingSeconds(task.remaining_bake_seconds)
+                              : remainingFromKitchenTime(task.finishes_at, kitchenStatus?.current_time)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
               <div className="time-control-card">
                 <div>
                   <strong>Advance kitchen time</strong>

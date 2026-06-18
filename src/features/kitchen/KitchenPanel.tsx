@@ -5,7 +5,7 @@ import { EmptyState } from '../../components/EmptyState';
 import { Field, TextInput } from '../../components/FormField';
 import { JsonBlock } from '../../components/JsonBlock';
 import { StatusBadge } from '../../components/StatusBadge';
-import { categoryLabel, dateTime, priorityLabel, remainingFromKitchenTime, truncateMiddle } from '../../lib/format';
+import { categoryLabel, dateTime, priorityLabel, remainingFromKitchenTime, remainingSeconds, truncateMiddle } from '../../lib/format';
 import type { SnackBuildersApiClient } from '../../api/client';
 import type { KitchenStatus, KitchenTask, Order } from '../../types/domain';
 
@@ -35,6 +35,14 @@ function priorityTone(priority: number): 'vip' | 'warning' | 'neutral' {
   if (priority === 1) return 'vip';
   if (priority === 2) return 'warning';
   return 'neutral';
+}
+
+function taskRemaining(task: KitchenTask, kitchenStatus: KitchenStatus): string {
+  if (task.remaining_bake_seconds !== null && task.remaining_bake_seconds !== undefined) {
+    return remainingSeconds(task.remaining_bake_seconds);
+  }
+
+  return remainingFromKitchenTime(task.finishes_at, kitchenStatus.current_time);
 }
 
 export function KitchenPanel({ api, kitchenStatus, orders, onKitchenStatusChange, onError }: KitchenPanelProps) {
@@ -91,7 +99,7 @@ export function KitchenPanel({ api, kitchenStatus, orders, onKitchenStatusChange
                             <strong>{task.name}</strong>
                             <span>{categoryLabel(task.category)}</span>
                             <StatusBadge value={priorityLabel(task.priority_level)} tone={priorityTone(task.priority_level)} />
-                            <small>Finishes {remainingFromKitchenTime(task.finishes_at, kitchenStatus.current_time)}</small>
+                            <small>{taskRemaining(task, kitchenStatus)}</small>
                           </>
                         ) : (
                           <span className="muted">Available</span>
@@ -117,6 +125,7 @@ export function KitchenPanel({ api, kitchenStatus, orders, onKitchenStatusChange
                       <th>Task</th>
                       <th>Priority</th>
                       <th>Bake</th>
+                      <th>Remaining</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -129,6 +138,7 @@ export function KitchenPanel({ api, kitchenStatus, orders, onKitchenStatusChange
                         </td>
                         <td><StatusBadge value={priorityLabel(task.priority_level)} tone={priorityTone(task.priority_level)} /></td>
                         <td>{task.bake_time_minutes} min</td>
+                        <td>{taskRemaining(task, kitchenStatus)}</td>
                       </tr>
                     ))}
                   </tbody>

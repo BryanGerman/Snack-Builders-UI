@@ -109,6 +109,7 @@ export interface KitchenTask {
   started_at: string | null;
   finishes_at: string | null;
   bake_time_minutes: number;
+  remaining_bake_seconds?: number | null;
 }
 
 export interface KitchenStatus {
