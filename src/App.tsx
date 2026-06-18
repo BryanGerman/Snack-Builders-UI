@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, ClipboardList, CreditCard, Flame, LayoutDashboard, Menu as MenuIcon, TestTube2 } from 'lucide-react';
 import { SnackBuildersApiClient } from './api/client';
 import { ApiLogPanel } from './features/dashboard/ApiLogPanel';
@@ -13,8 +13,27 @@ import type { ApiLogEntry, KitchenStatus, MenuItem, Order, Payment } from './typ
 
 type TabId = 'dashboard' | 'menu' | 'orders' | 'payments' | 'kitchen' | 'testing';
 
-const DEFAULT_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
+const ENV_API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
+const ENV_PROXY_TARGET = import.meta.env.VITE_PROXY_TARGET || '';
+const DEFAULT_BASE_URL = import.meta.env.PROD && isLocalProxyBaseUrl(ENV_API_BASE_URL)
+  ? ENV_PROXY_TARGET || ENV_API_BASE_URL || '/api'
+  : ENV_API_BASE_URL || '/api';
 const DEFAULT_JWT_SECRET = import.meta.env.VITE_DEMO_JWT_SECRET || 'dev-only-snack-builders-secret';
+
+function isLocalProxyBaseUrl(baseUrl: string) {
+  const normalized = baseUrl.trim().replace(/\/+$/, '');
+  return normalized === '' || normalized === '/' || normalized === '/api';
+}
+
+function resolveApiBaseUrl(baseUrl: string) {
+  const trimmedBaseUrl = baseUrl.trim();
+
+  if (import.meta.env.PROD && ENV_PROXY_TARGET && isLocalProxyBaseUrl(trimmedBaseUrl)) {
+    return ENV_PROXY_TARGET;
+  }
+
+  return trimmedBaseUrl || DEFAULT_BASE_URL;
+}
 
 const tabs: Array<{ id: TabId; label: string; icon: typeof LayoutDashboard }> = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -37,15 +56,22 @@ function App() {
   const [kitchenStatus, setKitchenStatus] = useLocalStorage<KitchenStatus | null>('snack-ui.kitchen-status', null);
   const [logs, setLogs] = useState<ApiLogEntry[]>([]);
   const [lastError, setLastError] = useState('');
+  const effectiveApiBaseUrl = useMemo(() => resolveApiBaseUrl(apiBaseUrl), [apiBaseUrl]);
+
+  useEffect(() => {
+    if (effectiveApiBaseUrl !== apiBaseUrl.trim() && isLocalProxyBaseUrl(apiBaseUrl)) {
+      setApiBaseUrl(effectiveApiBaseUrl);
+    }
+  }, [apiBaseUrl, effectiveApiBaseUrl, setApiBaseUrl]);
 
   const api = useMemo(
     () =>
       new SnackBuildersApiClient({
-        baseUrl: apiBaseUrl,
+        baseUrl: effectiveApiBaseUrl,
         token,
         onLog: (entry) => setLogs((current) => [entry, ...current].slice(0, 80)),
       }),
-    [apiBaseUrl, token],
+    [effectiveApiBaseUrl, token],
   );
 
   function handleError(message: string) {
