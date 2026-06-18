@@ -1,4 +1,5 @@
 import { CheckCircle2, CircleDashed, Clock3, CreditCard, FastForward, Flame, LockKeyhole, PackagePlus, ReceiptText } from 'lucide-react';
+import { Button } from '../../components/Button';
 import { Card } from '../../components/Card';
 import { StatusBadge } from '../../components/StatusBadge';
 import type { KitchenStatus, MenuItem, Order, Payment } from '../../types/domain';
@@ -10,13 +11,24 @@ interface ChallengeCoverageProps {
   kitchenStatus: KitchenStatus | null;
   hasToken: boolean;
   hasTimeSimulationEvidence: boolean;
+  onReload: () => void | Promise<void>;
+  isReloading: boolean;
 }
 
 function requirementTone(isCovered: boolean) {
   return isCovered ? 'success' : 'warning';
 }
 
-export function ChallengeCoverage({ menu, orders, payments, kitchenStatus, hasToken, hasTimeSimulationEvidence }: ChallengeCoverageProps) {
+export function ChallengeCoverage({
+  menu,
+  orders,
+  payments,
+  kitchenStatus,
+  hasToken,
+  hasTimeSimulationEvidence,
+  onReload,
+  isReloading,
+}: ChallengeCoverageProps) {
   const activeMenu = menu.filter((item) => item.is_active);
   const hasAllBakeRules = ['cookies', 'pastries', 'breads'].every((category) =>
     activeMenu.some((item) => item.category === category),
@@ -74,7 +86,12 @@ export function ChallengeCoverage({ menu, orders, payments, kitchenStatus, hasTo
     <Card
       title="Challenge Coverage"
       subtitle="Operational evidence for the Snack Builders backend requirements."
-      actions={<StatusBadge value={hasToken ? 'auth ready' : 'auth missing'} tone={hasToken ? 'success' : 'danger'} />}
+      actions={
+        <div className="button-row">
+          <StatusBadge value={hasToken ? 'auth ready' : 'auth missing'} tone={hasToken ? 'success' : 'danger'} />
+          <Button variant="secondary" onClick={onReload} disabled={isReloading}>Reload</Button>
+        </div>
+      }
     >
       <div className="coverage-grid">
         {requirements.map((requirement) => {

@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, ClipboardList, CreditCard, Flame, KeyRound, LayoutDashboard, Menu as MenuIcon, TestTube2 } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { AlertTriangle, ClipboardList, CreditCard, Flame, KeyRound, LayoutDashboard, Menu as MenuIcon, RefreshCw, TestTube2 } from 'lucide-react';
 import { SnackBuildersApiClient } from './api/client';
 import { Button } from './components/Button';
 import { Field, TextArea, TextInput } from './components/FormField';
@@ -95,9 +95,11 @@ function App() {
   const [payments, setPayments] = useLocalStorage<Payment[]>('snack-ui.payments', []);
   const [selectedOrderId, setSelectedOrderId] = useLocalStorage('snack-ui.selected-order-id', '');
   const [kitchenStatus, setKitchenStatus] = useLocalStorage<KitchenStatus | null>('snack-ui.kitchen-status', null);
+  const [autoRefreshEnabled, setAutoRefreshEnabled] = useLocalStorage('snack-ui.auto-refresh-enabled', false);
   const [logs, setLogs] = useState<ApiLogEntry[]>([]);
   const [lastError, setLastError] = useState('');
-  const [lastAutoRefreshAt, setLastAutoRefreshAt] = useState('');
+  const [lastRefreshAt, setLastRefreshAt] = useState('');
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [isGeneratingToken, setIsGeneratingToken] = useState(false);
   const effectiveApiBaseUrl = useMemo(() => resolveApiBaseUrl(apiBaseUrl), [apiBaseUrl]);
 
@@ -121,43 +123,66 @@ function App() {
     [effectiveApiBaseUrl, token],
   );
 
-  useEffect(() => {
-    if (!token.trim() || !effectiveApiBaseUrl.trim()) return undefined;
+  function handleError(message: string) {
+    setLastError(message);
+    window.setTimeout(() => setLastError(''), 8000);
+  }
 
-    let cancelled = false;
+  const refreshRuntimeState = useCallback(
+    async ({ silent = false }: { silent?: boolean } = {}) => {
+      if (!token.trim() || !effectiveApiBaseUrl.trim()) {
+        if (!silent) handleError('Configure the API base URL and bearer token before reloading.');
+        return;
+      }
 
-    async function syncRuntimeState() {
+      if (!silent) setIsRefreshing(true);
+      const failures: string[] = [];
+
       try {
-        const kitchen = await api.getKitchenStatus();
-        if (cancelled) return;
-        setKitchenStatus(kitchen);
+        const [kitchenResult, menuResult] = await Promise.allSettled([
+          api.getKitchenStatus(),
+          api.listMenu(),
+        ]);
 
-        try {
-          const latestMenu = await api.listMenu();
-          if (!cancelled) {
-            setMenu(latestMenu);
-          }
-        } catch {
-          // Keep existing menu state if the background refresh fails.
+        if (kitchenResult.status === 'fulfilled') {
+          setKitchenStatus(kitchenResult.value);
+        } else {
+          failures.push(kitchenResult.reason instanceof Error ? kitchenResult.reason.message : String(kitchenResult.reason));
+        }
+
+        if (menuResult.status === 'fulfilled') {
+          setMenu(menuResult.value);
+        } else {
+          failures.push(menuResult.reason instanceof Error ? menuResult.reason.message : String(menuResult.reason));
         }
 
         if (selectedOrderId) {
           try {
             const order = await api.trackOrder(selectedOrderId);
-            if (!cancelled) {
-              setOrders((current) => upsertOrder(current, order));
-            }
-          } catch {
-            // A selected order can be stale; kitchen refresh should continue.
+            setOrders((current) => upsertOrder(current, order));
+          } catch (error) {
+            failures.push(error instanceof Error ? error.message : String(error));
           }
         }
 
-        if (!cancelled) {
-          setLastAutoRefreshAt(new Date().toISOString());
+        setLastRefreshAt(new Date().toISOString());
+        if (failures.length > 0 && !silent) {
+          handleError(failures[0] ?? 'Reload completed with errors.');
         }
-      } catch {
-        // Avoid noisy banners during background polling; explicit actions still surface errors.
+      } finally {
+        if (!silent) setIsRefreshing(false);
       }
+    },
+    [api, effectiveApiBaseUrl, selectedOrderId, setKitchenStatus, setMenu, setOrders, token],
+  );
+
+  useEffect(() => {
+    if (!autoRefreshEnabled || !token.trim() || !effectiveApiBaseUrl.trim()) return undefined;
+
+    let cancelled = false;
+    async function syncRuntimeState() {
+      if (cancelled) return;
+      await refreshRuntimeState({ silent: true });
     }
 
     syncRuntimeState();
@@ -167,12 +192,7 @@ function App() {
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [api, effectiveApiBaseUrl, selectedOrderId, setKitchenStatus, setMenu, setOrders, token]);
-
-  function handleError(message: string) {
-    setLastError(message);
-    window.setTimeout(() => setLastError(''), 8000);
-  }
+  }, [autoRefreshEnabled, effectiveApiBaseUrl, refreshRuntimeState, token]);
 
   async function generateAdminToken() {
     setIsGeneratingToken(true);
@@ -195,6 +215,8 @@ function App() {
     onSelectedOrderIdChange: setSelectedOrderId,
     onKitchenStatusChange: setKitchenStatus,
     onError: handleError,
+    onReload: refreshRuntimeState,
+    isReloading: isRefreshing,
   };
 
   return (
@@ -241,8 +263,17 @@ function App() {
           <Field label="Bearer token">
             <TextArea rows={5} value={token} onChange={(event) => setToken(event.target.value)} placeholder="Paste the API credential once" />
           </Field>
+          <label className="toggle-row">
+            <input
+              type="checkbox"
+              checked={autoRefreshEnabled}
+              onChange={(event) => setAutoRefreshEnabled(event.target.checked)}
+            />
+            <span>Auto-refresh</span>
+          </label>
           <p className="connection-footnote">Requests use <span className="mono">{effectiveApiBaseUrl || 'not configured'}</span></p>
-          <p className="connection-footnote">Auto-refresh <span className="mono">{lastAutoRefreshAt ? 'active' : 'waiting for auth'}</span></p>
+          <p className="connection-footnote">Refresh mode <span className="mono">{autoRefreshEnabled ? 'automatic every 5s' : 'manual only'}</span></p>
+          <p className="connection-footnote">Last reload <span className="mono">{lastRefreshAt || 'never'}</span></p>
         </details>
 
         <div className="sidebar-footer">
@@ -264,6 +295,10 @@ function App() {
             <div className="environment-status">
               <span>{token.trim() ? 'Connected' : 'Auth required'}</span>
               <strong>{effectiveApiBaseUrl || 'API not configured'}</strong>
+              <Button variant="secondary" className="status-reload" onClick={() => refreshRuntimeState()} disabled={isRefreshing}>
+                <RefreshCw size={15} />
+                {isRefreshing ? 'Reloading' : 'Reload'}
+              </Button>
             </div>
           </header>
 
@@ -290,6 +325,8 @@ function App() {
                 kitchenStatus={kitchenStatus}
                 hasToken={Boolean(token.trim())}
                 hasTimeSimulationEvidence={logs.some((entry) => entry.path === '/kitchen/time/advance')}
+                onReload={refreshRuntimeState}
+                isReloading={isRefreshing}
               />
               <ApiLogPanel entries={logs} onClear={() => setLogs([])} />
             </div>

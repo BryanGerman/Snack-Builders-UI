@@ -11,14 +11,14 @@ import { TimeSimulationPanel } from './TimeSimulationPanel';
 interface TestingPanelProps {
   api: SnackBuildersApiClient;
   menu: MenuItem[];
-  orders: Order[];
-  payments: Payment[];
   onMenuChange: Dispatch<SetStateAction<MenuItem[]>>;
   onOrdersChange: Dispatch<SetStateAction<Order[]>>;
   onPaymentsChange: Dispatch<SetStateAction<Payment[]>>;
   onKitchenStatusChange: (status: KitchenStatus) => void;
   onSelectedOrderIdChange: (orderId: string) => void;
   onError: (message: string) => void;
+  onReload: () => void | Promise<void>;
+  isReloading: boolean;
 }
 
 function upsertOrder(orders: Order[], next: Order): Order[] {
@@ -38,14 +38,14 @@ function kitchenHasOrder(status: KitchenStatus, orderId: string): boolean {
 export function TestingPanel({
   api,
   menu,
-  orders,
-  payments,
   onMenuChange,
   onOrdersChange,
   onPaymentsChange,
   onKitchenStatusChange,
   onSelectedOrderIdChange,
   onError,
+  onReload,
+  isReloading,
 }: TestingPanelProps) {
   const [results, setResults] = useState<TestStepResult[]>([]);
   const [scenarioOrders, setScenarioOrders] = useState<Order[]>([]);
@@ -247,8 +247,6 @@ export function TestingPanel({
     <div className="page-stack">
       <TimeSimulationPanel
         api={api}
-        orders={orders}
-        onOrdersChange={onOrdersChange}
         onKitchenStatusChange={onKitchenStatusChange}
         onResult={push}
         onError={onError}
@@ -259,6 +257,7 @@ export function TestingPanel({
         subtitle="Run high-value checks for menu, tickets, payment, capacity, priority queue, and ETA updates."
         actions={
           <div className="button-row">
+            <Button variant="secondary" onClick={onReload} disabled={isReloading}>Reload</Button>
             <Button variant="secondary" onClick={runSmokeTests} disabled={pendingScenario === 'smoke'}>Smoke</Button>
             <Button onClick={runCompleteE2E} disabled={pendingScenario === 'e2e'}>Run E2E</Button>
             <Button variant="secondary" onClick={runPriorityScenario} disabled={pendingScenario === 'priority'}>Priority scenario</Button>

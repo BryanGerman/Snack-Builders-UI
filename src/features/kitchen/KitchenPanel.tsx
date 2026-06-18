@@ -15,6 +15,8 @@ interface KitchenPanelProps {
   orders: Order[];
   onKitchenStatusChange: (status: KitchenStatus) => void;
   onError: (message: string) => void;
+  onReload: () => void | Promise<void>;
+  isReloading: boolean;
 }
 
 function taskForSlot(tasks: KitchenTask[], ovenIndex: number, slotIndex: number): KitchenTask | undefined {
@@ -68,7 +70,7 @@ function kitchenOrderState(order: Order, unscheduledOrders: Order[]): { value: s
   return { value: 'scheduled', tone: 'success' };
 }
 
-export function KitchenPanel({ api, kitchenStatus, orders, onKitchenStatusChange, onError }: KitchenPanelProps) {
+export function KitchenPanel({ api, kitchenStatus, orders, onKitchenStatusChange, onError, onReload, isReloading }: KitchenPanelProps) {
   const [manualOrderId, setManualOrderId] = useState('');
   const [pendingAction, setPendingAction] = useState('');
 
@@ -135,7 +137,11 @@ export function KitchenPanel({ api, kitchenStatus, orders, onKitchenStatusChange
     <div className="page-stack">
       {kitchenStatus ? (
         <>
-          <Card title="Kitchen Capacity" subtitle="Auto-monitored scheduler state for 2 ovens x 3 slots.">
+          <Card
+            title="Kitchen Capacity"
+            subtitle="Scheduler state for 2 ovens x 3 slots."
+            actions={<Button variant="secondary" onClick={onReload} disabled={isReloading}>Reload</Button>}
+          >
             <div className="metric-grid">
               <div className="metric"><span>Ovens</span><strong>{kitchenStatus.ovens}</strong></div>
               <div className="metric"><span>Slots / oven</span><strong>{kitchenStatus.slots_per_oven}</strong></div>
@@ -278,8 +284,8 @@ export function KitchenPanel({ api, kitchenStatus, orders, onKitchenStatusChange
           </details>
         </>
       ) : (
-        <Card title="Kitchen Scheduler" subtitle="Auto-refresh loads kitchen state once credentials are configured.">
-          <EmptyState title="Kitchen status not loaded." detail="Add the credential once; the UI auto-refreshes kitchen state in the background." />
+        <Card title="Kitchen Scheduler" subtitle="Reload kitchen state once credentials are configured.">
+          <EmptyState title="Kitchen status not loaded." detail="Add the credential once, then use Reload or enable auto-refresh in Environment." />
         </Card>
       )}
     </div>

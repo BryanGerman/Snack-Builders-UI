@@ -224,6 +224,23 @@ textarea:disabled {
   overflow-wrap: anywhere;
 }
 
+.toggle-row {
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-top: var(--space-2);
+  color: #cbd5e1;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.toggle-row input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--color-primary);
+}
+
 .sidebar-footer {
   margin-top: auto;
   display: grid;
@@ -311,6 +328,11 @@ textarea:disabled {
   font-size: 13px;
   font-weight: 700;
   overflow-wrap: anywhere;
+}
+
+.status-reload {
+  width: 100%;
+  margin-top: var(--space-3);
 }
 
 .summary-grid,

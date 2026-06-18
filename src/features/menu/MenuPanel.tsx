@@ -20,9 +20,11 @@ interface MenuPanelProps {
   menu: MenuItem[];
   onMenuChange: Dispatch<SetStateAction<MenuItem[]>>;
   onError: (message: string) => void;
+  onReload: () => void | Promise<void>;
+  isReloading: boolean;
 }
 
-export function MenuPanel({ api, menu, onMenuChange, onError }: MenuPanelProps) {
+export function MenuPanel({ api, menu, onMenuChange, onError, onReload, isReloading }: MenuPanelProps) {
   const [form, setForm] = useState<MenuItemCreate>(INITIAL_FORM);
   const [selectedId, setSelectedId] = useState('');
   const [pendingAction, setPendingAction] = useState('');
@@ -135,10 +137,14 @@ export function MenuPanel({ api, menu, onMenuChange, onError }: MenuPanelProps) 
         </Card>
 
         <div className="stack">
-          <Card title="Menu Catalog" subtitle="Current items returned by the API; select one to edit it.">
+          <Card
+            title="Menu Catalog"
+            subtitle="Current items returned by the API; select one to edit it."
+            actions={<Button variant="secondary" onClick={onReload} disabled={isReloading}>Reload</Button>}
+          >
             <div className="table-wrap">
               {menu.length === 0 ? (
-                <EmptyState title="Menu is empty in this UI state." detail="Auto-refresh runs after the credential is configured, or seed demo items." />
+                <EmptyState title="Menu is empty in this UI state." detail="Use Reload or seed demo items." />
               ) : (
                 <table>
                   <thead>

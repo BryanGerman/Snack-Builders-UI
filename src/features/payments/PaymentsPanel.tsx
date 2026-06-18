@@ -18,6 +18,8 @@ interface PaymentsPanelProps {
   onOrdersChange: Dispatch<SetStateAction<Order[]>>;
   onSelectedOrderIdChange: (orderId: string) => void;
   onError: (message: string) => void;
+  onReload: () => void | Promise<void>;
+  isReloading: boolean;
 }
 
 function upsertOrder(orders: Order[], next: Order): Order[] {
@@ -35,6 +37,8 @@ export function PaymentsPanel({
   onOrdersChange,
   onSelectedOrderIdChange,
   onError,
+  onReload,
+  isReloading,
 }: PaymentsPanelProps) {
   const [orderId, setOrderId] = useState(selectedOrderId);
   const [amount, setAmount] = useState('');
@@ -143,7 +147,11 @@ export function PaymentsPanel({
             </Card>
           )}
 
-          <Card title="Payable Orders" subtitle="Select an order to load its payment context.">
+          <Card
+            title="Payable Orders"
+            subtitle="Select an order to load its payment context."
+            actions={<Button variant="secondary" onClick={onReload} disabled={isReloading}>Reload</Button>}
+          >
             <div className="table-wrap">
               {orders.length === 0 ? (
                 <EmptyState title="No orders in this UI session." detail="Create an order first." />

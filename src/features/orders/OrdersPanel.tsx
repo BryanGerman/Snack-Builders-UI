@@ -25,6 +25,8 @@ interface OrdersPanelProps {
   onSelectedOrderIdChange: (orderId: string) => void;
   onKitchenStatusChange: (status: KitchenStatus) => void;
   onError: (message: string) => void;
+  onReload: () => void | Promise<void>;
+  isReloading: boolean;
 }
 
 function upsertOrder(orders: Order[], next: Order): Order[] {
@@ -92,6 +94,8 @@ export function OrdersPanel({
   onSelectedOrderIdChange,
   onKitchenStatusChange,
   onError,
+  onReload,
+  isReloading,
 }: OrdersPanelProps) {
   const [priority, setPriority] = useState<PriorityLevel>(3);
   const [draftItems, setDraftItems] = useState<DraftOrderItem[]>([
@@ -394,11 +398,11 @@ export function OrdersPanel({
                 </Card>
               )}
 
-              <Card title="Kitchen Simulator" subtitle="Advance the scheduler clock and let auto-refresh update the order state.">
+              <Card title="Kitchen Simulator" subtitle="Advance the scheduler clock, then use Reload if auto-refresh is disabled.">
                 <div className="time-control-card">
                   <div>
                     <strong>Advance kitchen time</strong>
-                    <span>Auto-refresh keeps oven state and this order in sync.</span>
+                    <span>Kitchen updates immediately; use Reload to refresh order records on demand.</span>
                   </div>
                   <div className="metric">
                     <span>Kitchen current time</span>
@@ -457,7 +461,11 @@ export function OrdersPanel({
         </div>
       </div>
 
-      <Card title="Recent Orders" subtitle="Session-local orders; select one to inspect and operate on it.">
+      <Card
+        title="Recent Orders"
+        subtitle="Session-local orders; select one to inspect and operate on it."
+        actions={<Button variant="secondary" onClick={onReload} disabled={isReloading}>Reload</Button>}
+      >
         <div className="table-wrap">
           {orders.length === 0 ? (
             <EmptyState title="No orders created in this UI session." />
