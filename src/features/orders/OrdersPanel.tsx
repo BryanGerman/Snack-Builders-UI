@@ -213,12 +213,9 @@ export function OrdersPanel({
   }
 
   return (
-    <Card
-      title="Order Placement & Tracking"
-      subtitle="Build multi-item tickets, verify total price, estimated_ready_time, status tracking, and item modification behavior."
-    >
-      <div className="grid grid-2">
-        <div className="stack">
+    <div className="page-stack">
+      <div className="workspace-grid">
+        <Card title="Order Builder" subtitle="Create multi-item tickets and verify priority-aware ETA calculation.">
           <Field label="Priority level">
             <SelectInput value={priority} onChange={(event) => setPriority(Number(event.target.value) as PriorityLevel)}>
               <option value={1}>Tier 1 · VIP</option>
@@ -259,133 +256,148 @@ export function OrdersPanel({
             </Field>
             <Button variant="secondary" onClick={() => trackOrder(manualOrderId)} disabled={isLoading || !manualOrderId}>Track</Button>
           </div>
-        </div>
+        </Card>
 
         <div className="stack">
           {selectedOrder ? (
-            <div className="order-summary">
-              <div className="metric-grid">
-                <div className="metric"><span>Status</span><strong>{selectedOrder.status}</strong></div>
-                <div className="metric"><span>Payment</span><strong>{selectedOrder.payment_status}</strong></div>
-                <div className="metric"><span>Total</span><strong>{money(selectedOrder.total_price)}</strong></div>
-                <div className="metric"><span>Remaining bake</span><strong>{selectedOrderRemaining}</strong></div>
-              </div>
-              <p className="muted">Estimated ready time: {dateTime(selectedOrder.estimated_ready_time)}</p>
-              <p className="muted">Priority: {priorityLabel(selectedOrder.priority_level)}</p>
+            <>
+              <Card title="Order Summary" subtitle="Selected ticket state, payment status, and remaining bake time.">
+                <div className="order-summary">
+                  <div className="metric-grid">
+                    <div className="metric"><span>Status</span><strong>{selectedOrder.status}</strong></div>
+                    <div className="metric"><span>Payment</span><strong>{selectedOrder.payment_status}</strong></div>
+                    <div className="metric"><span>Total</span><strong>{money(selectedOrder.total_price)}</strong></div>
+                    <div className="metric"><span>Remaining bake</span><strong>{selectedOrderRemaining}</strong></div>
+                  </div>
+                  <p className="muted">Estimated ready time: {dateTime(selectedOrder.estimated_ready_time)}</p>
+                  <p className="muted">Priority: {priorityLabel(selectedOrder.priority_level)}</p>
+                </div>
+              </Card>
+
               {selectedOrderTasks.length > 0 && (
-                <div className="table-wrap compact-table">
-                  <h3>Kitchen tasks for this order</h3>
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Item</th>
-                        <th>Status</th>
-                        <th>Remaining</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {selectedOrderTasks.map((task) => (
-                        <tr key={task.id}>
-                          <td>{task.name}</td>
-                          <td>{task.oven_id ? 'baking' : 'queued'}</td>
-                          <td>
-                            {typeof task.remaining_bake_seconds === 'number'
-                              ? remainingSeconds(task.remaining_bake_seconds)
-                              : remainingFromKitchenTime(task.finishes_at, kitchenStatus?.current_time)}
-                          </td>
+                <Card title="Kitchen Tasks" subtitle="Bake tasks attached to the selected order.">
+                  <div className="table-wrap compact-table">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Item</th>
+                          <th>Status</th>
+                          <th>Remaining</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                      </thead>
+                      <tbody>
+                        {selectedOrderTasks.map((task) => (
+                          <tr key={task.id}>
+                            <td>{task.name}</td>
+                            <td>{task.oven_id ? 'baking' : 'queued'}</td>
+                            <td>
+                              {typeof task.remaining_bake_seconds === 'number'
+                                ? remainingSeconds(task.remaining_bake_seconds)
+                                : remainingFromKitchenTime(task.finishes_at, kitchenStatus?.current_time)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </Card>
               )}
-              <div className="time-control-card">
-                <div>
-                  <strong>Advance kitchen time</strong>
-                  <span>Auto-refresh keeps oven state and this order in sync.</span>
-                </div>
-                <div className="metric">
-                  <span>Kitchen current time</span>
-                  <strong>{dateTime(kitchenStatus?.current_time ?? null)}</strong>
-                </div>
-                <div className="time-stepper">
-                  <Button variant="secondary" type="button" onClick={() => setAdvanceMinutes((value) => Math.max(0.5, value - 1))} disabled={isLoading}>-</Button>
-                  <TextInput type="number" min={0.5} step={0.5} value={advanceMinutes} onChange={(event) => setAdvanceMinutes(Number(event.target.value))} />
-                  <Button variant="secondary" type="button" onClick={() => setAdvanceMinutes((value) => value + 1)} disabled={isLoading}>+</Button>
-                </div>
-                <div className="time-presets">
-                  <Button variant="secondary" type="button" onClick={() => setAdvanceMinutes(5)} disabled={isLoading}>5m</Button>
-                  <Button variant="secondary" type="button" onClick={() => setAdvanceMinutes(10)} disabled={isLoading}>10m</Button>
-                  <Button variant="secondary" type="button" onClick={() => setAdvanceMinutes(20)} disabled={isLoading}>20m</Button>
-                  <Button variant="ghost" type="button" onClick={() => setAdvanceMinutes((value) => value + 1)} disabled={isLoading}>+1m</Button>
-                  <Button type="button" onClick={() => advanceKitchenTimeFromOrder(advanceMinutes)} disabled={isLoading}>
-                    Advance {Math.max(1, Math.round(advanceMinutes * 60))}s
-                  </Button>
-                </div>
-              </div>
-              <div className="button-row">
-                <Button variant="secondary" onClick={getBill} disabled={isLoading}>Get bill</Button>
-                <Button variant="secondary" onClick={updateFirstItemQuantity} disabled={isLoading || selectedOrder.items.length === 0}>+1 first item</Button>
-                <Button variant="danger" onClick={removeFirstItem} disabled={isLoading || selectedOrder.items.length === 0}>Remove first item</Button>
-              </div>
 
-              <div className="inline-form">
-                <Field label="Add item to selected order">
-                  <SelectInput value={selectedItemId} onChange={(event) => setSelectedItemId(event.target.value)}>
-                    <option value="">Select menu item...</option>
-                    {activeMenu.map((menuItem) => (
-                      <option key={menuItem.id} value={menuItem.id}>{menuItem.name}</option>
-                    ))}
-                  </SelectInput>
-                </Field>
-                <Field label="Qty">
-                  <TextInput type="number" min={1} value={selectedItemQuantity} onChange={(event) => setSelectedItemQuantity(Number(event.target.value))} />
-                </Field>
-                <Button variant="secondary" onClick={addItemToSelected} disabled={isLoading || !selectedItemId}>Add</Button>
-              </div>
+              <Card title="Kitchen Simulator" subtitle="Advance the scheduler clock and let auto-refresh update the order state.">
+                <div className="time-control-card">
+                  <div>
+                    <strong>Advance kitchen time</strong>
+                    <span>Auto-refresh keeps oven state and this order in sync.</span>
+                  </div>
+                  <div className="metric">
+                    <span>Kitchen current time</span>
+                    <strong>{dateTime(kitchenStatus?.current_time ?? null)}</strong>
+                  </div>
+                  <div className="time-stepper">
+                    <Button variant="secondary" type="button" onClick={() => setAdvanceMinutes((value) => Math.max(0.5, value - 1))} disabled={isLoading}>-</Button>
+                    <TextInput type="number" min={0.5} step={0.5} value={advanceMinutes} onChange={(event) => setAdvanceMinutes(Number(event.target.value))} />
+                    <Button variant="secondary" type="button" onClick={() => setAdvanceMinutes((value) => value + 1)} disabled={isLoading}>+</Button>
+                  </div>
+                  <div className="time-presets">
+                    <Button variant="secondary" type="button" onClick={() => setAdvanceMinutes(5)} disabled={isLoading}>5m</Button>
+                    <Button variant="secondary" type="button" onClick={() => setAdvanceMinutes(10)} disabled={isLoading}>10m</Button>
+                    <Button variant="secondary" type="button" onClick={() => setAdvanceMinutes(20)} disabled={isLoading}>20m</Button>
+                    <Button variant="ghost" type="button" onClick={() => setAdvanceMinutes((value) => value + 1)} disabled={isLoading}>+1m</Button>
+                    <Button type="button" onClick={() => advanceKitchenTimeFromOrder(advanceMinutes)} disabled={isLoading}>
+                      Advance {Math.max(1, Math.round(advanceMinutes * 60))}s
+                    </Button>
+                  </div>
+                </div>
+              </Card>
 
-              <details className="details-panel" open>
+              <Card title="Order Actions" subtitle="Verify bill retrieval and item mutation endpoints.">
+                <div className="button-row">
+                  <Button variant="secondary" onClick={getBill} disabled={isLoading}>Get bill</Button>
+                  <Button variant="secondary" onClick={updateFirstItemQuantity} disabled={isLoading || selectedOrder.items.length === 0}>+1 first item</Button>
+                  <Button variant="danger" onClick={removeFirstItem} disabled={isLoading || selectedOrder.items.length === 0}>Remove first item</Button>
+                </div>
+
+                <div className="inline-form separated">
+                  <Field label="Add item to selected order">
+                    <SelectInput value={selectedItemId} onChange={(event) => setSelectedItemId(event.target.value)}>
+                      <option value="">Select menu item...</option>
+                      {activeMenu.map((menuItem) => (
+                        <option key={menuItem.id} value={menuItem.id}>{menuItem.name}</option>
+                      ))}
+                    </SelectInput>
+                  </Field>
+                  <Field label="Qty">
+                    <TextInput type="number" min={1} value={selectedItemQuantity} onChange={(event) => setSelectedItemQuantity(Number(event.target.value))} />
+                  </Field>
+                  <Button variant="secondary" onClick={addItemToSelected} disabled={isLoading || !selectedItemId}>Add</Button>
+                </div>
+              </Card>
+
+              <details className="details-panel json-card">
                 <summary>Selected order JSON</summary>
                 <JsonBlock value={selectedOrder} />
               </details>
-            </div>
+            </>
           ) : (
-            <EmptyState title="No order selected." detail="Place an order or enter an order id to track it." />
+            <Card title="Order Summary" subtitle="Select or create an order to inspect status, payment, ETA, kitchen tasks, and raw JSON.">
+              <EmptyState title="No order selected." detail="Place an order or enter an order id to track it." />
+            </Card>
           )}
         </div>
       </div>
 
-      <div className="table-wrap separated">
-        <h3>Recent orders</h3>
-        {orders.length === 0 ? (
-          <EmptyState title="No orders created in this UI session." />
-        ) : (
-          <table>
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>Priority</th>
-                <th>Status</th>
-                <th>Payment</th>
-                <th>Total</th>
-                <th>ETA</th>
-              </tr>
-            </thead>
-            <tbody>
-              {orders.map((order) => (
-                <tr key={order.id} className={order.id === selectedOrderId ? 'selected-row' : ''} onClick={() => onSelectedOrderIdChange(order.id)}>
-                  <td className="mono">{truncateMiddle(order.id, 22)}</td>
-                  <td>{priorityLabel(order.priority_level)}</td>
-                  <td><StatusBadge value={order.status} tone={order.status === 'ready' ? 'success' : order.status === 'baking' ? 'warning' : 'neutral'} /></td>
-                  <td><StatusBadge value={order.payment_status} tone={order.payment_status === 'paid' ? 'success' : 'warning'} /></td>
-                  <td>{money(order.total_price)}</td>
-                  <td>{remainingFromKitchenTime(order.estimated_ready_time, kitchenStatus?.current_time)}</td>
+      <Card title="Recent Orders" subtitle="Session-local orders; select one to inspect and operate on it.">
+        <div className="table-wrap">
+          {orders.length === 0 ? (
+            <EmptyState title="No orders created in this UI session." />
+          ) : (
+            <table>
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Priority</th>
+                  <th>Status</th>
+                  <th>Payment</th>
+                  <th>Total</th>
+                  <th>ETA</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
-    </Card>
+              </thead>
+              <tbody>
+                {orders.map((order) => (
+                  <tr key={order.id} className={order.id === selectedOrderId ? 'selected-row' : ''} onClick={() => onSelectedOrderIdChange(order.id)}>
+                    <td className="mono">{truncateMiddle(order.id, 22)}</td>
+                    <td>{priorityLabel(order.priority_level)}</td>
+                    <td><StatusBadge value={order.status} tone={order.status === 'ready' ? 'success' : order.status === 'baking' ? 'warning' : 'neutral'} /></td>
+                    <td><StatusBadge value={order.payment_status} tone={order.payment_status === 'paid' ? 'success' : 'warning'} /></td>
+                    <td>{money(order.total_price)}</td>
+                    <td>{remainingFromKitchenTime(order.estimated_ready_time, kitchenStatus?.current_time)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </Card>
+    </div>
   );
 }

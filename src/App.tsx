@@ -208,6 +208,7 @@ function App() {
           </div>
         </div>
 
+        <div className="sidebar-section-label">Navigation</div>
         <nav className="nav-list" aria-label="Main navigation">
           {tabs.map((tab) => {
             const Icon = tab.icon;
@@ -220,14 +221,14 @@ function App() {
           })}
         </nav>
 
-        <section className="connection-panel" aria-label="API connection">
-          <div className="connection-heading">
+        <details className="connection-panel" aria-label="API connection">
+          <summary className="connection-heading">
             <KeyRound size={18} />
             <div>
-              <strong>Connection</strong>
-              <span>{token.trim() ? 'Credential ready' : 'Credential required'}</span>
+              <strong>Environment</strong>
+              <span>{token.trim() ? 'Connected · credential ready' : 'Credential required'}</span>
             </div>
-          </div>
+          </summary>
           <Field label="API base">
             <TextInput value={apiBaseUrl} onChange={(event) => setApiBaseUrl(event.target.value)} placeholder="https://api.example.com" />
           </Field>
@@ -242,7 +243,7 @@ function App() {
           </Field>
           <p className="connection-footnote">Requests use <span className="mono">{effectiveApiBaseUrl || 'not configured'}</span></p>
           <p className="connection-footnote">Auto-refresh <span className="mono">{lastAutoRefreshAt ? 'active' : 'waiting for auth'}</span></p>
-        </section>
+        </details>
 
         <div className="sidebar-footer">
           <span>2 ovens / 3 trays each</span>
@@ -251,48 +252,55 @@ function App() {
       </aside>
 
       <main className="main-content">
-        <header className="hero">
-          <div>
-            <p className="eyebrow">Snack Builders Backend Console</p>
-            <h1>Order, payment, and kitchen scheduler verification</h1>
-            <p>
-              Validate menu operations, multi-item tickets, payments, oven capacity, ETA recalculation, and VIP priority behavior against the deployed API.
-            </p>
-          </div>
-          <div className="hero-stats">
-            <div><span>Menu</span><strong>{menu.length}</strong></div>
-            <div><span>Orders</span><strong>{orders.length}</strong></div>
-            <div><span>Payments</span><strong>{payments.length}</strong></div>
-            <div><span>Queued</span><strong>{kitchenStatus?.queued_tasks.length ?? 0}</strong></div>
-          </div>
-        </header>
+        <div className="page-container">
+          <header className="page-header">
+            <div className="page-title-group">
+              <p className="page-kicker">Snack Builders Backend Console</p>
+              <h1>Orders Verification Console</h1>
+              <p>
+                Validate menu operations, multi-item tickets, payments, oven capacity, ETA recalculation, and VIP priority behavior.
+              </p>
+            </div>
+            <div className="environment-status">
+              <span>{token.trim() ? 'Connected' : 'Auth required'}</span>
+              <strong>{effectiveApiBaseUrl || 'API not configured'}</strong>
+            </div>
+          </header>
 
-        {lastError && (
-          <div className="error-banner">
-            <AlertTriangle size={18} />
-            <span>{lastError}</span>
+          <div className="summary-grid" aria-label="Runtime summary">
+            <div className="metric"><span>Menu items</span><strong>{menu.length}</strong></div>
+            <div className="metric"><span>Orders</span><strong>{orders.length}</strong></div>
+            <div className="metric"><span>Payments</span><strong>{payments.length}</strong></div>
+            <div className="metric"><span>Queued tasks</span><strong>{kitchenStatus?.queued_tasks.length ?? 0}</strong></div>
           </div>
-        )}
 
-        {activeTab === 'dashboard' && (
-          <div className="page-stack">
-            <ChallengeCoverage
-              menu={menu}
-              orders={orders}
-              payments={payments}
-              kitchenStatus={kitchenStatus}
-              hasToken={Boolean(token.trim())}
-              hasTimeSimulationEvidence={logs.some((entry) => entry.path === '/kitchen/time/advance')}
-            />
-            <ApiLogPanel entries={logs} onClear={() => setLogs([])} />
-          </div>
-        )}
+          {lastError && (
+            <div className="error-banner">
+              <AlertTriangle size={18} />
+              <span>{lastError}</span>
+            </div>
+          )}
 
-        {activeTab === 'menu' && <MenuPanel {...sharedProps} />}
-        {activeTab === 'orders' && <OrdersPanel {...sharedProps} kitchenStatus={kitchenStatus} />}
-        {activeTab === 'payments' && <PaymentsPanel {...sharedProps} />}
-        {activeTab === 'kitchen' && <KitchenPanel {...sharedProps} kitchenStatus={kitchenStatus} />}
-        {activeTab === 'testing' && <TestingPanel {...sharedProps} />}
+          {activeTab === 'dashboard' && (
+            <div className="page-stack">
+              <ChallengeCoverage
+                menu={menu}
+                orders={orders}
+                payments={payments}
+                kitchenStatus={kitchenStatus}
+                hasToken={Boolean(token.trim())}
+                hasTimeSimulationEvidence={logs.some((entry) => entry.path === '/kitchen/time/advance')}
+              />
+              <ApiLogPanel entries={logs} onClear={() => setLogs([])} />
+            </div>
+          )}
+
+          {activeTab === 'menu' && <MenuPanel {...sharedProps} />}
+          {activeTab === 'orders' && <OrdersPanel {...sharedProps} kitchenStatus={kitchenStatus} />}
+          {activeTab === 'payments' && <PaymentsPanel {...sharedProps} />}
+          {activeTab === 'kitchen' && <KitchenPanel {...sharedProps} kitchenStatus={kitchenStatus} />}
+          {activeTab === 'testing' && <TestingPanel {...sharedProps} />}
+        </div>
       </main>
     </div>
   );
