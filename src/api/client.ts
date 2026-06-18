@@ -56,7 +56,7 @@ export class SnackBuildersApiClient {
   private readonly onLog: Logger | undefined;
 
   constructor(options: ApiClientOptions) {
-    this.baseUrl = cleanBaseUrl(options.baseUrl || '/api');
+    this.baseUrl = cleanBaseUrl(options.baseUrl);
     this.token = options.token;
     this.onLog = options.onLog;
   }
