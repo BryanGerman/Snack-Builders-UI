@@ -29,18 +29,16 @@ jobs:
           pwd
           ls -la
           test -f package.json
-          test -f package-lock.json
-          test -f src/vite-env.d.ts
+          test -f vite.config.ts
+          test -d src
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: "20"
-          cache: npm
-          cache-dependency-path: package-lock.json
 
       - name: Install dependencies
-        run: npm ci
+        run: npm install
 
       - name: Build
         env:
