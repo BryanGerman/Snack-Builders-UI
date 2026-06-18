@@ -243,6 +243,81 @@ export function TestingPanel({
     }
   }
 
+  async function runPartialOrderPriorityScenario() {
+    setPendingScenario('partial-priority');
+    setResults([]);
+    setScenarioOrders([]);
+    try {
+      const bread = await ensureMenuItem('breads');
+      const cookies = await ensureMenuItem('cookies');
+      push(makeStep('Partial-order scenario menu ready', true, 'Using one low-priority order with 8 breads, then one VIP order with 2 cookies.', { bread, cookies }));
+
+      const low = await createSingleItemOrder(bread, 3, 8);
+      push(makeStep('Low-priority bulk order placed', true, `Tier 3 ticket ${truncateMiddle(low.id, 24)} with 8 bake tasks. Six should start and two should remain queued when capacity is empty.`, low));
+
+      const beforeVip = await api.getKitchenStatus();
+      onKitchenStatusChange(beforeVip);
+      const lowActiveBeforeVip = beforeVip.active_tasks.filter((task) => task.order_id === low.id);
+      const lowQueuedBeforeVip = beforeVip.queued_tasks.filter((task) => task.order_id === low.id);
+      push(makeStep(
+        'Bulk order occupies available slots',
+        lowActiveBeforeVip.length > 0 && lowQueuedBeforeVip.length > 0,
+        `${lowActiveBeforeVip.length} low-priority tasks active, ${lowQueuedBeforeVip.length} low-priority tasks queued.`,
+        beforeVip,
+      ));
+
+      const vip = await createSingleItemOrder(cookies, 1, 2);
+      push(makeStep('VIP partial interrupt order placed', true, `VIP ticket ${truncateMiddle(vip.id, 24)} with 2 bake tasks. Running low-priority bakes stay active; queued VIP tasks should jump ahead.`, vip));
+
+      const afterVip = await api.getKitchenStatus();
+      onKitchenStatusChange(afterVip);
+      const queueOrderIds = afterVip.queued_tasks.map((task) => task.order_id);
+      const vipQueueIndexes = queueOrderIds
+        .map((orderId, index) => (orderId === vip.id ? index : -1))
+        .filter((index) => index >= 0);
+      const lowQueueIndexes = queueOrderIds
+        .map((orderId, index) => (orderId === low.id ? index : -1))
+        .filter((index) => index >= 0);
+      const vipAheadOfLowRemainder =
+        vipQueueIndexes.length >= 2 &&
+        lowQueueIndexes.length > 0 &&
+        Math.max(...vipQueueIndexes) < Math.min(...lowQueueIndexes);
+
+      push(makeStep(
+        'VIP queued ahead of low-priority remainder',
+        vipAheadOfLowRemainder,
+        vipAheadOfLowRemainder
+          ? 'Queued VIP tasks are ahead of the remaining low-priority tasks; active low-priority bakes were not preempted.'
+          : 'Expected VIP queued tasks to appear before the low-priority remainder. This indicates the backend may be scheduling by order instead of by task priority.',
+        {
+          active_tasks: afterVip.active_tasks,
+          queued_tasks: afterVip.queued_tasks,
+          vip_order_id: vip.id,
+          low_order_id: low.id,
+          vip_queue_indexes: vipQueueIndexes,
+          low_queue_indexes: lowQueueIndexes,
+        },
+      ));
+
+      const refreshed: Order[] = [];
+      for (const order of [low, vip]) {
+        try {
+          refreshed.push(await api.trackOrder(order.id));
+        } catch {
+          refreshed.push(order);
+        }
+      }
+      setScenarioOrders(refreshed);
+      onOrdersChange((current) => [...refreshed, ...current.filter((order) => !refreshed.some((next) => next.id === order.id))]);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      push(makeStep('Partial-order priority scenario failed', false, message));
+      onError(message);
+    } finally {
+      setPendingScenario('');
+    }
+  }
+
   return (
     <div className="page-stack">
       <TimeSimulationPanel
@@ -261,11 +336,12 @@ export function TestingPanel({
             <Button variant="secondary" onClick={runSmokeTests} disabled={pendingScenario === 'smoke'}>Smoke</Button>
             <Button onClick={runCompleteE2E} disabled={pendingScenario === 'e2e'}>Run E2E</Button>
             <Button variant="secondary" onClick={runPriorityScenario} disabled={pendingScenario === 'priority'}>Priority scenario</Button>
+            <Button variant="secondary" onClick={runPartialOrderPriorityScenario} disabled={pendingScenario === 'partial-priority'}>Partial VIP</Button>
           </div>
         }
       >
         <div className="info-callout">
-          <strong>Priority scenario intent:</strong> create 6 active bakes to fill capacity, then insert a VIP order. Existing bakes must not be preempted; queued lower-priority work should be delayed behind VIP work when the scheduler recalculates estimates.
+          <strong>Priority scenario intent:</strong> scheduling is per bake task/tray. Active bakes must not be removed from ovens, but unstarted low-priority tasks from the same order must yield to later VIP tasks.
         </div>
       </Card>
 

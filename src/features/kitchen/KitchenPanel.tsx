@@ -7,7 +7,7 @@ import { JsonBlock } from '../../components/JsonBlock';
 import { StatusBadge } from '../../components/StatusBadge';
 import { categoryLabel, dateTime, priorityLabel, remainingFromKitchenTime, remainingSeconds, truncateMiddle } from '../../lib/format';
 import type { SnackBuildersApiClient } from '../../api/client';
-import type { KitchenStatus, KitchenTask, Order } from '../../types/domain';
+import type { KitchenStatus, KitchenTask, Order, PriorityLevel } from '../../types/domain';
 
 interface KitchenPanelProps {
   api: SnackBuildersApiClient;
@@ -70,14 +70,25 @@ function kitchenOrderState(order: Order, unscheduledOrders: Order[]): { value: s
   return { value: 'scheduled', tone: 'success' };
 }
 
+function orderTaskCounts(order: Order, kitchenStatus: KitchenStatus): { active: number; queued: number } {
+  return {
+    active: kitchenStatus.active_tasks.filter((task) => task.order_id === order.id).length,
+    queued: kitchenStatus.queued_tasks.filter((task) => task.order_id === order.id).length,
+  };
+}
+
+function taskPriority(task: KitchenTask, orders: Order[]): PriorityLevel {
+  return orders.find((order) => order.id === task.order_id)?.priority_level ?? task.priority_level;
+}
+
 export function KitchenPanel({ api, kitchenStatus, orders, onKitchenStatusChange, onError, onReload, isReloading }: KitchenPanelProps) {
   const [manualOrderId, setManualOrderId] = useState('');
   const [pendingAction, setPendingAction] = useState('');
 
   const queuedByPriority = useMemo(() => {
     if (!kitchenStatus) return [];
-    return [...kitchenStatus.queued_tasks].sort((a, b) => a.priority_level - b.priority_level || a.sequence - b.sequence);
-  }, [kitchenStatus]);
+    return [...kitchenStatus.queued_tasks].sort((a, b) => taskPriority(a, orders) - taskPriority(b, orders) || a.sequence - b.sequence);
+  }, [kitchenStatus, orders]);
 
   const unscheduledOrders = useMemo(() => {
     if (!kitchenStatus) return [];
@@ -167,6 +178,7 @@ export function KitchenPanel({ api, kitchenStatus, orders, onKitchenStatusChange
                     {Array.from({ length: kitchenStatus.slots_per_oven }).map((__, slotIndex) => {
                       const task = taskForSlot(kitchenStatus.active_tasks, ovenIndex, slotIndex) ?? fallbackSlotTasks(kitchenStatus, ovenIndex, slotIndex);
                       const taskReady = task ? isTaskReady(task, kitchenStatus) : false;
+                      const priority = task ? taskPriority(task, orders) : null;
                       return (
                         <div className={`oven-slot ${task ? 'slot-active' : ''} ${taskReady ? 'slot-ready' : ''}`} key={slotIndex}>
                           <span className="slot-title">Tray {slotIndex + 1}</span>
@@ -174,7 +186,7 @@ export function KitchenPanel({ api, kitchenStatus, orders, onKitchenStatusChange
                             <>
                               <strong>{task.name}</strong>
                               <span>{categoryLabel(task.category)}</span>
-                              <StatusBadge value={priorityLabel(task.priority_level)} tone={priorityTone(task.priority_level)} />
+                              {priority && <StatusBadge value={priorityLabel(priority)} tone={priorityTone(priority)} />}
                               {taskReady && <StatusBadge value="ready" tone="success" />}
                               <small>{taskRemaining(task, kitchenStatus)}</small>
                             </>
@@ -207,18 +219,21 @@ export function KitchenPanel({ api, kitchenStatus, orders, onKitchenStatusChange
                       </tr>
                     </thead>
                     <tbody>
-                      {queuedByPriority.map((task) => (
-                        <tr key={task.id}>
-                          <td>{task.sequence}</td>
-                          <td>
-                            <strong>{task.name}</strong>
-                            <small className="mono">{truncateMiddle(task.order_id, 18)}</small>
-                          </td>
-                          <td><StatusBadge value={priorityLabel(task.priority_level)} tone={priorityTone(task.priority_level)} /></td>
-                          <td>{task.bake_time_minutes} min</td>
-                          <td>{taskRemaining(task, kitchenStatus)}</td>
-                        </tr>
-                      ))}
+                      {queuedByPriority.map((task) => {
+                        const priority = taskPriority(task, orders);
+                        return (
+                          <tr key={task.id}>
+                            <td>{task.sequence}</td>
+                            <td>
+                              <strong>{task.name}</strong>
+                              <small className="mono">{truncateMiddle(task.order_id, 18)}</small>
+                            </td>
+                            <td><StatusBadge value={priorityLabel(priority)} tone={priorityTone(priority)} /></td>
+                            <td>{task.bake_time_minutes} min</td>
+                            <td>{taskRemaining(task, kitchenStatus)}</td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 )}
@@ -255,17 +270,20 @@ export function KitchenPanel({ api, kitchenStatus, orders, onKitchenStatusChange
                           <th>Order</th>
                           <th>Priority</th>
                           <th>Kitchen</th>
+                          <th>Tasks</th>
                           <th>ETA</th>
                         </tr>
                       </thead>
                       <tbody>
                         {orders.map((order) => {
                           const kitchenState = kitchenOrderState(order, unscheduledOrders);
+                          const taskCounts = orderTaskCounts(order, kitchenStatus);
                           return (
                             <tr key={order.id} onClick={() => setManualOrderId(order.id)}>
                               <td className="mono">{truncateMiddle(order.id, 18)}</td>
                               <td>{priorityLabel(order.priority_level)}</td>
                               <td><StatusBadge value={kitchenState.value} tone={kitchenState.tone} /></td>
+                              <td>{taskCounts.active} active / {taskCounts.queued} queued</td>
                               <td>{dateTime(order.estimated_ready_time)}</td>
                             </tr>
                           );

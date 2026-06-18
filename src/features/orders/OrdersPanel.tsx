@@ -80,6 +80,12 @@ function statusTone(status: string): 'success' | 'warning' | 'neutral' {
   return 'neutral';
 }
 
+function priorityTone(priority: number): 'vip' | 'warning' | 'neutral' {
+  if (priority === 1) return 'vip';
+  if (priority === 2) return 'warning';
+  return 'neutral';
+}
+
 function kitchenHasOrder(status: KitchenStatus, orderId: string): boolean {
   return [...status.active_tasks, ...status.queued_tasks].some((task) => task.order_id === orderId);
 }
@@ -376,6 +382,7 @@ export function OrdersPanel({
                       <thead>
                         <tr>
                           <th>Item</th>
+                          <th>Priority</th>
                           <th>Status</th>
                           <th>Remaining</th>
                         </tr>
@@ -384,6 +391,7 @@ export function OrdersPanel({
                         {selectedOrderTasks.map((task) => (
                           <tr key={task.id}>
                             <td>{task.name}</td>
+                            <td><StatusBadge value={priorityLabel(selectedOrder.priority_level)} tone={priorityTone(selectedOrder.priority_level)} /></td>
                             <td>{isTaskReady(task, kitchenStatus) ? 'ready' : task.oven_id ? 'baking' : 'queued'}</td>
                             <td>
                               {typeof task.remaining_bake_seconds === 'number'
