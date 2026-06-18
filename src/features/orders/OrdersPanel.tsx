@@ -5,7 +5,7 @@ import { EmptyState } from '../../components/EmptyState';
 import { Field, SelectInput, TextInput } from '../../components/FormField';
 import { JsonBlock } from '../../components/JsonBlock';
 import { StatusBadge } from '../../components/StatusBadge';
-import { dateTime, money, priorityLabel, relativeMinutes, truncateMiddle } from '../../lib/format';
+import { dateTime, money, priorityLabel, remainingFromKitchenTime, truncateMiddle } from '../../lib/format';
 import type { SnackBuildersApiClient } from '../../api/client';
 import type { KitchenStatus, MenuItem, Order, PriorityLevel } from '../../types/domain';
 
@@ -51,7 +51,7 @@ export function OrdersPanel({
   const [manualOrderId, setManualOrderId] = useState('');
   const [selectedItemId, setSelectedItemId] = useState('');
   const [selectedItemQuantity, setSelectedItemQuantity] = useState(1);
-  const [advanceMinutes, setAdvanceMinutes] = useState(5);
+  const [advanceMinutes, setAdvanceMinutes] = useState(1);
   const [isLoading, setIsLoading] = useState(false);
 
   const selectedOrder = useMemo(
@@ -251,7 +251,7 @@ export function OrdersPanel({
                 <div className="metric"><span>Status</span><strong>{selectedOrder.status}</strong></div>
                 <div className="metric"><span>Payment</span><strong>{selectedOrder.payment_status}</strong></div>
                 <div className="metric"><span>Total</span><strong>{money(selectedOrder.total_price)}</strong></div>
-                <div className="metric"><span>Ready estimate</span><strong>{relativeMinutes(selectedOrder.estimated_ready_time)}</strong></div>
+                <div className="metric"><span>Ready estimate</span><strong>{remainingFromKitchenTime(selectedOrder.estimated_ready_time, kitchenStatus?.current_time)}</strong></div>
               </div>
               <p className="muted">Estimated ready time: {dateTime(selectedOrder.estimated_ready_time)}</p>
               <p className="muted">Priority: {priorityLabel(selectedOrder.priority_level)}</p>
@@ -273,6 +273,7 @@ export function OrdersPanel({
                   <Button variant="secondary" type="button" onClick={() => setAdvanceMinutes(5)} disabled={isLoading}>5m</Button>
                   <Button variant="secondary" type="button" onClick={() => setAdvanceMinutes(10)} disabled={isLoading}>10m</Button>
                   <Button variant="secondary" type="button" onClick={() => setAdvanceMinutes(20)} disabled={isLoading}>20m</Button>
+                  <Button variant="ghost" type="button" onClick={() => setAdvanceMinutes((value) => value + 1)} disabled={isLoading}>+1m</Button>
                   <Button type="button" onClick={() => advanceKitchenTimeFromOrder(advanceMinutes)} disabled={isLoading}>
                     Advance {Math.max(1, Math.round(advanceMinutes * 60))}s
                   </Button>
@@ -334,7 +335,7 @@ export function OrdersPanel({
                   <td><StatusBadge value={order.status} tone={order.status === 'ready' ? 'success' : order.status === 'baking' ? 'warning' : 'neutral'} /></td>
                   <td><StatusBadge value={order.payment_status} tone={order.payment_status === 'paid' ? 'success' : 'warning'} /></td>
                   <td>{money(order.total_price)}</td>
-                  <td>{relativeMinutes(order.estimated_ready_time)}</td>
+                  <td>{remainingFromKitchenTime(order.estimated_ready_time, kitchenStatus?.current_time)}</td>
                 </tr>
               ))}
             </tbody>

@@ -7,7 +7,7 @@ export function money(value: string | number | null | undefined): string {
 }
 
 export function dateTime(value: string | null | undefined): string {
-  if (!value) return '—';
+  if (!value) return '-';
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return value;
   return new Intl.DateTimeFormat(undefined, {
@@ -27,6 +27,20 @@ export function relativeMinutes(value: string | null | undefined): string {
   if (minutes === 0) return 'now';
   if (minutes > 0) return `in ${minutes} min`;
   return `${Math.abs(minutes)} min ago`;
+}
+
+export function remainingFromKitchenTime(value: string | null | undefined, kitchenCurrentTime: string | null | undefined): string {
+  if (!value) return '—';
+  const target = new Date(value).getTime();
+  const current = kitchenCurrentTime ? new Date(kitchenCurrentTime).getTime() : Date.now();
+  if (Number.isNaN(target) || Number.isNaN(current)) return value;
+  const seconds = Math.max(0, Math.ceil((target - current) / 1000));
+  if (seconds === 0) return 'ready now';
+  const minutes = Math.floor(seconds / 60);
+  const remainder = seconds % 60;
+  if (minutes === 0) return `${remainder}s remaining`;
+  if (remainder === 0) return `${minutes}m remaining`;
+  return `${minutes}m ${remainder}s remaining`;
 }
 
 export function priorityLabel(priority: PriorityLevel): string {

@@ -5,7 +5,7 @@ import { EmptyState } from '../../components/EmptyState';
 import { Field, TextInput } from '../../components/FormField';
 import { JsonBlock } from '../../components/JsonBlock';
 import { StatusBadge } from '../../components/StatusBadge';
-import { categoryLabel, dateTime, priorityLabel, relativeMinutes, truncateMiddle } from '../../lib/format';
+import { categoryLabel, dateTime, priorityLabel, remainingFromKitchenTime, truncateMiddle } from '../../lib/format';
 import type { SnackBuildersApiClient } from '../../api/client';
 import type { KitchenStatus, KitchenTask, Order } from '../../types/domain';
 
@@ -91,7 +91,7 @@ export function KitchenPanel({ api, kitchenStatus, orders, onKitchenStatusChange
                             <strong>{task.name}</strong>
                             <span>{categoryLabel(task.category)}</span>
                             <StatusBadge value={priorityLabel(task.priority_level)} tone={priorityTone(task.priority_level)} />
-                            <small>Finishes {relativeMinutes(task.finishes_at)}</small>
+                            <small>Finishes {remainingFromKitchenTime(task.finishes_at, kitchenStatus.current_time)}</small>
                           </>
                         ) : (
                           <span className="muted">Available</span>

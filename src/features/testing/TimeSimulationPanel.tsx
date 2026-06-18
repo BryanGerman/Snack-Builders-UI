@@ -31,7 +31,7 @@ export function TimeSimulationPanel({
   onResult,
   onError,
 }: TimeSimulationPanelProps) {
-  const [minutes, setMinutes] = useState(5);
+  const [minutes, setMinutes] = useState(1);
   const [lastResponse, setLastResponse] = useState<KitchenStatus | null>(null);
   const [trackedOrders, setTrackedOrders] = useState<Order[]>([]);
   const [isRunning, setIsRunning] = useState(false);
@@ -93,7 +93,7 @@ export function TimeSimulationPanel({
       <div className="grid grid-2">
         <div className="stack">
           <div className="grid grid-2">
-            <Field label="Minutes to advance" hint="5 minutes sends { seconds: 300 }.">
+            <Field label="Minutes to advance" hint="Advance 1 minute to see remaining time decrease; 5 minutes completes cookies.">
               <div className="time-stepper">
                 <Button variant="secondary" type="button" onClick={() => adjustMinutes(-1)} disabled={isRunning}>-</Button>
                 <TextInput type="number" min={0.5} step="0.5" value={minutes} onChange={(event) => setMinutes(Number(event.target.value))} />
@@ -110,6 +110,7 @@ export function TimeSimulationPanel({
             <Button variant="secondary" type="button" onClick={() => setMinutes(5)} disabled={isRunning}>Cookies 5m</Button>
             <Button variant="secondary" type="button" onClick={() => setMinutes(10)} disabled={isRunning}>Pastries 10m</Button>
             <Button variant="secondary" type="button" onClick={() => setMinutes(20)} disabled={isRunning}>Breads 20m</Button>
+            <Button variant="ghost" type="button" onClick={() => adjustMinutes(1)} disabled={isRunning}>+1m</Button>
             <Button variant="ghost" type="button" onClick={() => adjustMinutes(5)} disabled={isRunning}>+5m</Button>
           </div>
 
