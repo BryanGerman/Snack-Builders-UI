@@ -660,6 +660,8 @@ td small { display: block; color: var(--color-text-muted); margin-top: var(--spa
 
 .info-callout strong { color: var(--color-primary); }
 
+.kitchen-alert { margin-bottom: var(--space-4); }
+
 .empty-state {
   min-height: 112px;
   display: grid;
@@ -722,6 +724,11 @@ td small { display: block; color: var(--color-text-muted); margin-top: var(--spa
   border-style: solid;
   border-color: rgba(15, 118, 110, 0.32);
   background: #f0fdfa;
+}
+
+.slot-ready {
+  border-color: #86efac;
+  background: #f0fdf4;
 }
 
 .slot-title {

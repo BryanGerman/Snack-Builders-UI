@@ -37,14 +37,35 @@ function priorityTone(priority: number): 'vip' | 'warning' | 'neutral' {
   return 'neutral';
 }
 
+function isTaskReady(task: KitchenTask, kitchenStatus: KitchenStatus): boolean {
+  if (typeof task.remaining_bake_seconds === 'number') {
+    return task.remaining_bake_seconds <= 0;
+  }
+
+  if (!task.finishes_at) return false;
+  const finishesAt = new Date(task.finishes_at).getTime();
+  const current = kitchenStatus.current_time ? new Date(kitchenStatus.current_time).getTime() : Date.now();
+  return Number.isFinite(finishesAt) && Number.isFinite(current) && finishesAt <= current;
+}
+
 function taskRemaining(task: KitchenTask, kitchenStatus: KitchenStatus): string {
-  const zeroLabel = task.oven_id ? 'finishing...' : 'queued';
+  const zeroLabel = isTaskReady(task, kitchenStatus) ? 'ready now' : task.oven_id ? 'finishing...' : 'queued';
 
   if (task.remaining_bake_seconds !== null && task.remaining_bake_seconds !== undefined) {
     return remainingSeconds(task.remaining_bake_seconds, zeroLabel);
   }
 
   return remainingFromKitchenTime(task.finishes_at, kitchenStatus.current_time, zeroLabel);
+}
+
+function orderIsTerminal(order: Order): boolean {
+  return order.status === 'ready' || order.status === 'cancelled';
+}
+
+function kitchenOrderState(order: Order, unscheduledOrders: Order[]): { value: string; tone: 'success' | 'warning' | 'neutral' } {
+  if (orderIsTerminal(order)) return { value: order.status, tone: 'neutral' };
+  if (unscheduledOrders.some((pending) => pending.id === order.id)) return { value: 'not scheduled', tone: 'warning' };
+  return { value: 'scheduled', tone: 'success' };
 }
 
 export function KitchenPanel({ api, kitchenStatus, orders, onKitchenStatusChange, onError }: KitchenPanelProps) {
@@ -55,6 +76,12 @@ export function KitchenPanel({ api, kitchenStatus, orders, onKitchenStatusChange
     if (!kitchenStatus) return [];
     return [...kitchenStatus.queued_tasks].sort((a, b) => a.priority_level - b.priority_level || a.sequence - b.sequence);
   }, [kitchenStatus]);
+
+  const unscheduledOrders = useMemo(() => {
+    if (!kitchenStatus) return [];
+    const scheduledOrderIds = new Set([...kitchenStatus.active_tasks, ...kitchenStatus.queued_tasks].map((task) => task.order_id));
+    return orders.filter((order) => !orderIsTerminal(order) && !scheduledOrderIds.has(order.id));
+  }, [kitchenStatus, orders]);
 
   async function scheduleOrder(orderId: string) {
     if (!orderId) {
@@ -71,6 +98,39 @@ export function KitchenPanel({ api, kitchenStatus, orders, onKitchenStatusChange
     }
   }
 
+  async function schedulePendingOrders() {
+    if (unscheduledOrders.length === 0) return;
+    setPendingAction('schedule-pending');
+    const failures: string[] = [];
+    let latestStatus: KitchenStatus | null = null;
+
+    try {
+      for (const order of unscheduledOrders) {
+        try {
+          latestStatus = await api.scheduleOrder(order.id);
+        } catch (error) {
+          failures.push(error instanceof Error ? error.message : String(error));
+        }
+      }
+
+      try {
+        latestStatus = await api.getKitchenStatus();
+      } catch {
+        // Keep the latest schedule response if a final read is temporarily unavailable.
+      }
+
+      if (latestStatus) {
+        onKitchenStatusChange(latestStatus);
+      }
+
+      if (failures.length === unscheduledOrders.length) {
+        onError(failures[0] ?? 'Pending orders could not be scheduled.');
+      }
+    } finally {
+      setPendingAction('');
+    }
+  }
+
   return (
     <div className="page-stack">
       {kitchenStatus ? (
@@ -80,12 +140,19 @@ export function KitchenPanel({ api, kitchenStatus, orders, onKitchenStatusChange
               <div className="metric"><span>Ovens</span><strong>{kitchenStatus.ovens}</strong></div>
               <div className="metric"><span>Slots / oven</span><strong>{kitchenStatus.slots_per_oven}</strong></div>
               <div className="metric"><span>Total capacity</span><strong>{kitchenStatus.total_slots}</strong></div>
+              <div className="metric"><span>Active bakes</span><strong>{kitchenStatus.active_tasks.length}</strong></div>
               <div className="metric"><span>Queued</span><strong>{kitchenStatus.queued_tasks.length}</strong></div>
               <div className="metric metric-wide"><span>Kitchen current time</span><strong>{dateTime(kitchenStatus.current_time ?? null)}</strong></div>
             </div>
           </Card>
 
           <Card title="Oven Slots" subtitle="Active bakes cannot be preempted; each tray shows priority and remaining bake time.">
+            {unscheduledOrders.length > 0 && kitchenStatus.active_tasks.length === 0 && kitchenStatus.queued_tasks.length === 0 && (
+              <div className="info-callout kitchen-alert">
+                <strong>{unscheduledOrders.length} session orders are not in the kitchen scheduler.</strong>
+                <span> Schedule pending orders to fill ovens and validate capacity behavior.</span>
+              </div>
+            )}
             <div className="oven-grid">
               {Array.from({ length: kitchenStatus.ovens }).map((_, ovenIndex) => (
                 <section className="oven-card" key={ovenIndex}>
@@ -93,14 +160,16 @@ export function KitchenPanel({ api, kitchenStatus, orders, onKitchenStatusChange
                   <div className="slot-grid">
                     {Array.from({ length: kitchenStatus.slots_per_oven }).map((__, slotIndex) => {
                       const task = taskForSlot(kitchenStatus.active_tasks, ovenIndex, slotIndex) ?? fallbackSlotTasks(kitchenStatus, ovenIndex, slotIndex);
+                      const taskReady = task ? isTaskReady(task, kitchenStatus) : false;
                       return (
-                        <div className={`oven-slot ${task ? 'slot-active' : ''}`} key={slotIndex}>
+                        <div className={`oven-slot ${task ? 'slot-active' : ''} ${taskReady ? 'slot-ready' : ''}`} key={slotIndex}>
                           <span className="slot-title">Tray {slotIndex + 1}</span>
                           {task ? (
                             <>
                               <strong>{task.name}</strong>
                               <span>{categoryLabel(task.category)}</span>
                               <StatusBadge value={priorityLabel(task.priority_level)} tone={priorityTone(task.priority_level)} />
+                              {taskReady && <StatusBadge value="ready" tone="success" />}
                               <small>{taskRemaining(task, kitchenStatus)}</small>
                             </>
                           ) : (
@@ -158,6 +227,15 @@ export function KitchenPanel({ api, kitchenStatus, orders, onKitchenStatusChange
                   </Field>
                   <Button onClick={() => scheduleOrder(manualOrderId)} disabled={pendingAction === 'schedule' || !manualOrderId}>Schedule</Button>
                 </div>
+                <div className="button-row separated">
+                  <Button
+                    variant="secondary"
+                    onClick={schedulePendingOrders}
+                    disabled={pendingAction === 'schedule-pending' || unscheduledOrders.length === 0}
+                  >
+                    Schedule pending orders ({unscheduledOrders.length})
+                  </Button>
+                </div>
               </Card>
 
               <Card title="Session Orders" subtitle="Click an order to stage it for manual scheduling.">
@@ -170,17 +248,22 @@ export function KitchenPanel({ api, kitchenStatus, orders, onKitchenStatusChange
                         <tr>
                           <th>Order</th>
                           <th>Priority</th>
+                          <th>Kitchen</th>
                           <th>ETA</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {orders.map((order) => (
-                          <tr key={order.id} onClick={() => setManualOrderId(order.id)}>
-                            <td className="mono">{truncateMiddle(order.id, 18)}</td>
-                            <td>{priorityLabel(order.priority_level)}</td>
-                            <td>{dateTime(order.estimated_ready_time)}</td>
-                          </tr>
-                        ))}
+                        {orders.map((order) => {
+                          const kitchenState = kitchenOrderState(order, unscheduledOrders);
+                          return (
+                            <tr key={order.id} onClick={() => setManualOrderId(order.id)}>
+                              <td className="mono">{truncateMiddle(order.id, 18)}</td>
+                              <td>{priorityLabel(order.priority_level)}</td>
+                              <td><StatusBadge value={kitchenState.value} tone={kitchenState.tone} /></td>
+                              <td>{dateTime(order.estimated_ready_time)}</td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   )}

@@ -7,7 +7,7 @@ import { JsonBlock } from '../../components/JsonBlock';
 import { StatusBadge } from '../../components/StatusBadge';
 import { dateTime, money, priorityLabel, remainingFromKitchenTime, remainingSeconds, truncateMiddle } from '../../lib/format';
 import type { SnackBuildersApiClient } from '../../api/client';
-import type { KitchenStatus, MenuItem, Order, PriorityLevel } from '../../types/domain';
+import type { KitchenStatus, KitchenTask, MenuItem, Order, OrderStatus, PriorityLevel } from '../../types/domain';
 
 interface DraftOrderItem {
   localId: string;
@@ -33,14 +33,53 @@ function upsertOrder(orders: Order[], next: Order): Order[] {
   return orders.map((order) => (order.id === next.id ? next : order));
 }
 
-function orderZeroLabel(order: Order | null | undefined): string {
-  if (order?.status === 'ready') return 'ready now';
+function isTaskReady(task: KitchenTask, kitchenStatus: KitchenStatus | null): boolean {
+  if (typeof task.remaining_bake_seconds === 'number') {
+    return task.remaining_bake_seconds <= 0;
+  }
+
+  if (!task.finishes_at) return false;
+  const finishesAt = new Date(task.finishes_at).getTime();
+  const current = kitchenStatus?.current_time ? new Date(kitchenStatus.current_time).getTime() : Date.now();
+  return Number.isFinite(finishesAt) && Number.isFinite(current) && finishesAt <= current;
+}
+
+function isOrderPastEta(order: Order | null | undefined, kitchenStatus: KitchenStatus | null): boolean {
+  if (!order?.estimated_ready_time) return false;
+  const eta = new Date(order.estimated_ready_time).getTime();
+  const current = kitchenStatus?.current_time ? new Date(kitchenStatus.current_time).getTime() : Date.now();
+  return Number.isFinite(eta) && Number.isFinite(current) && eta <= current;
+}
+
+function effectiveOrderStatus(order: Order | null | undefined, tasks: KitchenTask[], kitchenStatus: KitchenStatus | null): OrderStatus | 'ready' {
+  if (!order) return 'received';
+  if (order.status === 'ready') return 'ready';
+  if (tasks.length > 0 && tasks.every((task) => isTaskReady(task, kitchenStatus))) return 'ready';
+  if (tasks.some((task) => task.oven_id)) return 'baking';
+  if (tasks.length > 0) return 'waiting';
+  if (order.status === 'baking' && isOrderPastEta(order, kitchenStatus)) return 'ready';
+  return order.status;
+}
+
+function orderZeroLabel(order: Order | null | undefined, tasks: KitchenTask[], kitchenStatus: KitchenStatus | null): string {
+  if (effectiveOrderStatus(order, tasks, kitchenStatus) === 'ready') return 'ready now';
   if (order?.status === 'baking') return 'finishing...';
   return 'awaiting status sync';
 }
 
-function taskZeroLabel(task: { oven_id: string | null }): string {
+function taskZeroLabel(task: KitchenTask, kitchenStatus: KitchenStatus | null): string {
+  if (isTaskReady(task, kitchenStatus)) return 'ready now';
   return task.oven_id ? 'finishing...' : 'queued';
+}
+
+function statusTone(status: string): 'success' | 'warning' | 'neutral' {
+  if (status === 'ready') return 'success';
+  if (status === 'baking') return 'warning';
+  return 'neutral';
+}
+
+function kitchenHasOrder(status: KitchenStatus, orderId: string): boolean {
+  return [...status.active_tasks, ...status.queued_tasks].some((task) => task.order_id === orderId);
 }
 
 export function OrdersPanel({
@@ -80,13 +119,48 @@ export function OrdersPanel({
       .filter((value): value is number => typeof value === 'number');
 
     if (remainingValues.length > 0) {
-      return remainingSeconds(Math.max(...remainingValues), orderZeroLabel(selectedOrder));
+      return remainingSeconds(Math.max(...remainingValues), orderZeroLabel(selectedOrder, selectedOrderTasks, kitchenStatus));
     }
 
-    return remainingFromKitchenTime(selectedOrder?.estimated_ready_time, kitchenStatus?.current_time, orderZeroLabel(selectedOrder));
+    return remainingFromKitchenTime(
+      selectedOrder?.estimated_ready_time,
+      kitchenStatus?.current_time,
+      orderZeroLabel(selectedOrder, selectedOrderTasks, kitchenStatus),
+    );
   }, [kitchenStatus?.current_time, selectedOrder?.estimated_ready_time, selectedOrder?.status, selectedOrderTasks]);
 
   const activeMenu = menu.filter((item) => item.is_active);
+  const selectedEffectiveStatus = effectiveOrderStatus(selectedOrder, selectedOrderTasks, kitchenStatus);
+
+  function tasksForOrder(orderId: string): KitchenTask[] {
+    if (!kitchenStatus) return [];
+    return [...kitchenStatus.active_tasks, ...kitchenStatus.queued_tasks].filter((task) => task.order_id === orderId);
+  }
+
+  async function syncKitchenForOrder(orderId: string) {
+    try {
+      const current = await api.getKitchenStatus();
+      if (kitchenHasOrder(current, orderId)) {
+        onKitchenStatusChange(current);
+        return;
+      }
+    } catch {
+      // Scheduling below is the important recovery path when status cannot be read first.
+    }
+
+    try {
+      onKitchenStatusChange(await api.scheduleOrder(orderId));
+      return;
+    } catch {
+      // Some backends auto-schedule on creation or reject duplicate scheduling. Re-read state before giving up.
+    }
+
+    try {
+      onKitchenStatusChange(await api.getKitchenStatus());
+    } catch {
+      // Order creation should still succeed even if the kitchen snapshot is temporarily unavailable.
+    }
+  }
 
   function updateDraftItem(localId: string, patch: Partial<DraftOrderItem>) {
     setDraftItems((items) => items.map((item) => (item.localId === localId ? { ...item, ...patch } : item)));
@@ -115,6 +189,13 @@ export function OrdersPanel({
       onOrdersChange((current) => upsertOrder(current, order));
       onSelectedOrderIdChange(order.id);
       setManualOrderId(order.id);
+      await syncKitchenForOrder(order.id);
+      try {
+        const refreshedOrder = await api.trackOrder(order.id);
+        onOrdersChange((current) => upsertOrder(current, refreshedOrder));
+      } catch {
+        // The placed ticket is already in state; tracking is a best-effort freshness pass.
+      }
     } catch (error) {
       onError(error instanceof Error ? error.message : String(error));
     } finally {
@@ -274,7 +355,7 @@ export function OrdersPanel({
               <Card title="Order Summary" subtitle="Selected ticket state, payment status, and remaining bake time.">
                 <div className="order-summary">
                   <div className="metric-grid">
-                    <div className="metric"><span>Status</span><strong>{selectedOrder.status}</strong></div>
+                    <div className="metric"><span>Status</span><strong>{selectedEffectiveStatus}</strong></div>
                     <div className="metric"><span>Payment</span><strong>{selectedOrder.payment_status}</strong></div>
                     <div className="metric"><span>Total</span><strong>{money(selectedOrder.total_price)}</strong></div>
                     <div className="metric"><span>Remaining bake</span><strong>{selectedOrderRemaining}</strong></div>
@@ -299,11 +380,11 @@ export function OrdersPanel({
                         {selectedOrderTasks.map((task) => (
                           <tr key={task.id}>
                             <td>{task.name}</td>
-                            <td>{task.oven_id ? 'baking' : 'queued'}</td>
+                            <td>{isTaskReady(task, kitchenStatus) ? 'ready' : task.oven_id ? 'baking' : 'queued'}</td>
                             <td>
                               {typeof task.remaining_bake_seconds === 'number'
-                                ? remainingSeconds(task.remaining_bake_seconds, taskZeroLabel(task))
-                                : remainingFromKitchenTime(task.finishes_at, kitchenStatus?.current_time, taskZeroLabel(task))}
+                                ? remainingSeconds(task.remaining_bake_seconds, taskZeroLabel(task, kitchenStatus))
+                                : remainingFromKitchenTime(task.finishes_at, kitchenStatus?.current_time, taskZeroLabel(task, kitchenStatus))}
                             </td>
                           </tr>
                         ))}
@@ -393,16 +474,20 @@ export function OrdersPanel({
                 </tr>
               </thead>
               <tbody>
-                {orders.map((order) => (
-                  <tr key={order.id} className={order.id === selectedOrderId ? 'selected-row' : ''} onClick={() => onSelectedOrderIdChange(order.id)}>
-                    <td className="mono">{truncateMiddle(order.id, 22)}</td>
-                    <td>{priorityLabel(order.priority_level)}</td>
-                    <td><StatusBadge value={order.status} tone={order.status === 'ready' ? 'success' : order.status === 'baking' ? 'warning' : 'neutral'} /></td>
-                    <td><StatusBadge value={order.payment_status} tone={order.payment_status === 'paid' ? 'success' : 'warning'} /></td>
-                    <td>{money(order.total_price)}</td>
-                    <td>{remainingFromKitchenTime(order.estimated_ready_time, kitchenStatus?.current_time, orderZeroLabel(order))}</td>
-                  </tr>
-                ))}
+                {orders.map((order) => {
+                  const orderTasks = tasksForOrder(order.id);
+                  const effectiveStatus = effectiveOrderStatus(order, orderTasks, kitchenStatus);
+                  return (
+                    <tr key={order.id} className={order.id === selectedOrderId ? 'selected-row' : ''} onClick={() => onSelectedOrderIdChange(order.id)}>
+                      <td className="mono">{truncateMiddle(order.id, 22)}</td>
+                      <td>{priorityLabel(order.priority_level)}</td>
+                      <td><StatusBadge value={effectiveStatus} tone={statusTone(effectiveStatus)} /></td>
+                      <td><StatusBadge value={order.payment_status} tone={order.payment_status === 'paid' ? 'success' : 'warning'} /></td>
+                      <td>{money(order.total_price)}</td>
+                      <td>{remainingFromKitchenTime(order.estimated_ready_time, kitchenStatus?.current_time, orderZeroLabel(order, orderTasks, kitchenStatus))}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           )}

@@ -31,6 +31,10 @@ function makeStep(name: string, ok: boolean, detail: string, payload?: unknown):
   return { name, ok, detail, payload };
 }
 
+function kitchenHasOrder(status: KitchenStatus, orderId: string): boolean {
+  return [...status.active_tasks, ...status.queued_tasks].some((task) => task.order_id === orderId);
+}
+
 export function TestingPanel({
   api,
   menu,
@@ -70,7 +74,36 @@ export function TestingPanel({
     });
     onOrdersChange((current) => upsertOrder(current, order));
     onSelectedOrderIdChange(order.id);
+    await syncKitchenForOrder(order.id);
     return order;
+  }
+
+  async function syncKitchenForOrder(orderId: string): Promise<KitchenStatus | null> {
+    try {
+      const current = await api.getKitchenStatus();
+      if (kitchenHasOrder(current, orderId)) {
+        onKitchenStatusChange(current);
+        return current;
+      }
+    } catch {
+      // Try explicit scheduling when the status read is unavailable.
+    }
+
+    try {
+      const scheduled = await api.scheduleOrder(orderId);
+      onKitchenStatusChange(scheduled);
+      return scheduled;
+    } catch {
+      // If the backend auto-scheduled or rejected a duplicate request, a final status read may still be correct.
+    }
+
+    try {
+      const refreshed = await api.getKitchenStatus();
+      onKitchenStatusChange(refreshed);
+      return refreshed;
+    } catch {
+      return null;
+    }
   }
 
   async function runSmokeTests() {
@@ -124,6 +157,7 @@ export function TestingPanel({
       });
       onOrdersChange((current) => upsertOrder(current, order));
       onSelectedOrderIdChange(order.id);
+      await syncKitchenForOrder(order.id);
       push(makeStep('Multi-item order placed', true, `Ticket ${truncateMiddle(order.id, 24)} · total ${money(order.total_price)} · ETA ${relativeMinutes(order.estimated_ready_time)}`, order));
 
       const bill = await api.getBill(order.id);
@@ -165,6 +199,9 @@ export function TestingPanel({
           items: [{ menu_item_id: bread.id, quantity: 1 }],
         });
         created.push(order);
+        onOrdersChange((current) => upsertOrder(current, order));
+        onSelectedOrderIdChange(order.id);
+        await syncKitchenForOrder(order.id);
         push(makeStep(`Capacity filler ${i + 1}/6`, true, `${priorityLabel(order.priority_level)} · ETA ${relativeMinutes(order.estimated_ready_time)}`, order));
       }
 
@@ -177,7 +214,9 @@ export function TestingPanel({
         items: [{ menu_item_id: cookies.id, quantity: 1 }],
       });
       created.push(vip);
+      onOrdersChange((current) => upsertOrder(current, vip));
       onSelectedOrderIdChange(vip.id);
+      await syncKitchenForOrder(vip.id);
       push(makeStep('VIP order inserted', true, `VIP ticket ${truncateMiddle(vip.id, 24)} · ETA ${relativeMinutes(vip.estimated_ready_time)}`, vip));
 
       const afterVip = await api.getKitchenStatus();
