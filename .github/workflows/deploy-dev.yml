@@ -24,6 +24,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Show project files
+        run: |
+          pwd
+          ls -la
+          test -f package.json
+          test -f package-lock.json
+          test -f src/vite-env.d.ts
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
