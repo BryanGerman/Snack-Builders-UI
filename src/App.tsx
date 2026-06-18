@@ -15,21 +15,53 @@ type TabId = 'dashboard' | 'menu' | 'orders' | 'payments' | 'kitchen' | 'testing
 
 const ENV_API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
 const ENV_PROXY_TARGET = import.meta.env.VITE_PROXY_TARGET || '';
-const DEFAULT_BASE_URL = import.meta.env.PROD && isLocalProxyBaseUrl(ENV_API_BASE_URL)
-  ? ENV_PROXY_TARGET || ENV_API_BASE_URL || '/api'
-  : ENV_API_BASE_URL || '/api';
+const DEFAULT_BASE_URL = getDefaultApiBaseUrl();
 const DEFAULT_JWT_SECRET = import.meta.env.VITE_DEMO_JWT_SECRET || 'dev-only-snack-builders-secret';
+
+function cleanBaseUrl(baseUrl: string) {
+  return baseUrl.trim().replace(/\/+$/, '');
+}
+
+function isAbsoluteHttpUrl(baseUrl: string) {
+  return /^https?:\/\//i.test(baseUrl.trim());
+}
 
 function isLocalProxyBaseUrl(baseUrl: string) {
   const normalized = baseUrl.trim().replace(/\/+$/, '');
   return normalized === '' || normalized === '/' || normalized === '/api';
 }
 
-function resolveApiBaseUrl(baseUrl: string) {
-  const trimmedBaseUrl = baseUrl.trim();
+function isCurrentStaticHostBaseUrl(baseUrl: string) {
+  if (!baseUrl.trim() || typeof window === 'undefined') return false;
 
-  if (import.meta.env.PROD && ENV_PROXY_TARGET && isLocalProxyBaseUrl(trimmedBaseUrl)) {
-    return ENV_PROXY_TARGET;
+  try {
+    const url = new URL(baseUrl, window.location.origin);
+    return url.origin === window.location.origin;
+  } catch {
+    return false;
+  }
+}
+
+function getDefaultApiBaseUrl() {
+  const proxyTarget = cleanBaseUrl(ENV_PROXY_TARGET);
+  const apiBaseUrl = cleanBaseUrl(ENV_API_BASE_URL);
+
+  if (import.meta.env.PROD) {
+    return proxyTarget || (isAbsoluteHttpUrl(apiBaseUrl) ? apiBaseUrl : '');
+  }
+
+  return apiBaseUrl || '/api';
+}
+
+function resolveApiBaseUrl(baseUrl: string) {
+  const trimmedBaseUrl = cleanBaseUrl(baseUrl);
+
+  if (
+    import.meta.env.PROD &&
+    DEFAULT_BASE_URL &&
+    (isLocalProxyBaseUrl(trimmedBaseUrl) || isCurrentStaticHostBaseUrl(trimmedBaseUrl))
+  ) {
+    return DEFAULT_BASE_URL;
   }
 
   return trimmedBaseUrl || DEFAULT_BASE_URL;
@@ -59,7 +91,10 @@ function App() {
   const effectiveApiBaseUrl = useMemo(() => resolveApiBaseUrl(apiBaseUrl), [apiBaseUrl]);
 
   useEffect(() => {
-    if (effectiveApiBaseUrl !== apiBaseUrl.trim() && isLocalProxyBaseUrl(apiBaseUrl)) {
+    if (
+      effectiveApiBaseUrl !== apiBaseUrl.trim() &&
+      (isLocalProxyBaseUrl(apiBaseUrl) || isCurrentStaticHostBaseUrl(apiBaseUrl))
+    ) {
       setApiBaseUrl(effectiveApiBaseUrl);
     }
   }, [apiBaseUrl, effectiveApiBaseUrl, setApiBaseUrl]);
@@ -69,6 +104,7 @@ function App() {
       new SnackBuildersApiClient({
         baseUrl: effectiveApiBaseUrl,
         token,
+        blockRelativeUrls: import.meta.env.PROD,
         onLog: (entry) => setLogs((current) => [entry, ...current].slice(0, 80)),
       }),
     [effectiveApiBaseUrl, token],

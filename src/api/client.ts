@@ -19,6 +19,7 @@ interface ApiClientOptions {
   baseUrl: string;
   token: string;
   onLog?: Logger;
+  blockRelativeUrls?: boolean;
 }
 
 interface RequestOptions {
@@ -32,6 +33,10 @@ function cleanBaseUrl(baseUrl: string): string {
 
 function pathWithSlash(path: string): string {
   return path.startsWith('/') ? path : `/${path}`;
+}
+
+function isAbsoluteHttpUrl(url: string): boolean {
+  return /^https?:\/\//i.test(url.trim());
 }
 
 async function parseBody(response: Response): Promise<unknown> {
@@ -54,11 +59,13 @@ export class SnackBuildersApiClient {
   private readonly baseUrl: string;
   private readonly token: string;
   private readonly onLog: Logger | undefined;
+  private readonly blockRelativeUrls: boolean;
 
   constructor(options: ApiClientOptions) {
     this.baseUrl = cleanBaseUrl(options.baseUrl);
     this.token = options.token;
     this.onLog = options.onLog;
+    this.blockRelativeUrls = options.blockRelativeUrls ?? false;
   }
 
   private async request<T>(path: string, options: RequestOptions = {}): Promise<T> {
@@ -80,6 +87,14 @@ export class SnackBuildersApiClient {
     }
 
     try {
+      if (this.blockRelativeUrls && !isAbsoluteHttpUrl(this.baseUrl)) {
+        throw new ApiError(
+          'API base URL is not configured for production. Set VITE_PROXY_TARGET to the API Gateway URL.',
+          0,
+          null,
+        );
+      }
+
       const response = await fetch(`${this.baseUrl}${normalizedPath}`, init);
       const body = await parseBody(response);
       const durationMs = Math.round(performance.now() - started);
