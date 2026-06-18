@@ -85,6 +85,7 @@ export function KitchenPanel({ api, kitchenStatus, orders, onKitchenStatusChange
             <div className="metric"><span>Slots / oven</span><strong>{kitchenStatus.slots_per_oven}</strong></div>
             <div className="metric"><span>Total capacity</span><strong>{kitchenStatus.total_slots}</strong></div>
             <div className="metric"><span>Queued</span><strong>{kitchenStatus.queued_tasks.length}</strong></div>
+            <div className="metric metric-wide"><span>Kitchen current time</span><strong>{dateTime(kitchenStatus.current_time ?? null)}</strong></div>
           </div>
 
           <div className="oven-grid">

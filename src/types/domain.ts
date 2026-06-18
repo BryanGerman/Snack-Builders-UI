@@ -115,6 +115,7 @@ export interface KitchenStatus {
   ovens: number;
   slots_per_oven: number;
   total_slots: number;
+  current_time?: string;
   active_tasks: KitchenTask[];
   queued_tasks: KitchenTask[];
 }

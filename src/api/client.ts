@@ -27,6 +27,8 @@ interface RequestOptions {
   body?: unknown;
 }
 
+export type ApiRequestMethod = NonNullable<RequestOptions['method']>;
+
 function cleanBaseUrl(baseUrl: string): string {
   return baseUrl.trim().replace(/\/+$/, '');
 }
@@ -197,5 +199,13 @@ export class SnackBuildersApiClient {
 
   scheduleOrder(orderId: string) {
     return this.request<KitchenStatus>(`/kitchen/orders/${encodeURIComponent(orderId)}/schedule`, { method: 'POST' });
+  }
+
+  advanceKitchenTime(seconds: number) {
+    return this.request<KitchenStatus>('/kitchen/time/advance', { method: 'POST', body: { seconds } });
+  }
+
+  testingEndpoint<T = unknown>(path: string, method: ApiRequestMethod = 'GET', body?: unknown) {
+    return this.request<T>(path, { method, body });
   }
 }

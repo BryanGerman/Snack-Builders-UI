@@ -515,6 +515,10 @@ td small { display: block; color: var(--muted); margin-top: 3px; }
   gap: 10px;
 }
 
+.metric-wide {
+  grid-column: span 2;
+}
+
 .kitchen-metrics { margin-bottom: 14px; }
 
 .oven-grid {
@@ -625,6 +629,48 @@ td small { display: block; color: var(--muted); margin-top: 3px; }
   border-radius: var(--radius);
   color: var(--muted);
   background: #ffffff;
+}
+
+.time-stepper {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) 40px;
+  gap: 6px;
+}
+
+.time-stepper .btn {
+  padding-inline: 0;
+  font-size: 1.1rem;
+}
+
+.time-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.time-control-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 180px;
+  gap: 10px;
+  align-items: end;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel-soft);
+}
+
+.time-control-card strong,
+.time-control-card span {
+  display: block;
+}
+
+.time-control-card span {
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
+.time-control-card .time-presets {
+  grid-column: 1 / -1;
 }
 
 .spinner {

@@ -6,6 +6,7 @@ import { StatusBadge } from '../../components/StatusBadge';
 import { money, priorityLabel, relativeMinutes, truncateMiddle } from '../../lib/format';
 import type { SnackBuildersApiClient } from '../../api/client';
 import type { KitchenStatus, MenuItem, Order, Payment, PriorityLevel, SnackCategory, TestStepResult } from '../../types/domain';
+import { TimeSimulationPanel } from './TimeSimulationPanel';
 
 interface TestingPanelProps {
   api: SnackBuildersApiClient;
@@ -204,20 +205,30 @@ export function TestingPanel({
   }
 
   return (
-    <Card
-      title="Automated Functional Test Console"
-      subtitle="Runs high-value scenarios for the challenge: menu, order ticket, payment, kitchen capacity, priority queue, and ETA updates."
-      actions={
-        <div className="button-row">
-          <Button variant="secondary" onClick={runSmokeTests} disabled={isRunning}>Smoke</Button>
-          <Button onClick={runCompleteE2E} disabled={isRunning}>Run E2E</Button>
-          <Button variant="secondary" onClick={runPriorityScenario} disabled={isRunning}>Priority scenario</Button>
+    <div className="page-stack">
+      <TimeSimulationPanel
+        api={api}
+        orders={orders}
+        onOrdersChange={onOrdersChange}
+        onKitchenStatusChange={onKitchenStatusChange}
+        onResult={push}
+        onError={onError}
+      />
+
+      <Card
+        title="Automated Functional Test Console"
+        subtitle="Runs high-value scenarios for the challenge: menu, order ticket, payment, kitchen capacity, priority queue, and ETA updates."
+        actions={
+          <div className="button-row">
+            <Button variant="secondary" onClick={runSmokeTests} disabled={isRunning}>Smoke</Button>
+            <Button onClick={runCompleteE2E} disabled={isRunning}>Run E2E</Button>
+            <Button variant="secondary" onClick={runPriorityScenario} disabled={isRunning}>Priority scenario</Button>
+          </div>
+        }
+      >
+        <div className="info-callout">
+          <strong>Priority scenario intent:</strong> create 6 active bakes to fill capacity, then insert a VIP order. Existing bakes must not be preempted; queued lower-priority work should be delayed behind VIP work when the scheduler recalculates estimates.
         </div>
-      }
-    >
-      <div className="info-callout">
-        <strong>Priority scenario intent:</strong> create 6 active bakes to fill capacity, then insert a VIP order. Existing bakes must not be preempted; queued lower-priority work should be delayed behind VIP work when the scheduler recalculates estimates.
-      </div>
 
       {scenarioOrders.length > 0 && (
         <div className="table-wrap separated">
@@ -247,22 +258,23 @@ export function TestingPanel({
         </div>
       )}
 
-      <div className="test-results separated">
-        {results.length === 0 ? (
-          <div className="empty-state"><strong>No test run yet.</strong><span>Run Smoke, E2E, or Priority scenario.</span></div>
-        ) : (
-          results.map((step) => (
-            <details className={`test-step ${step.ok ? 'test-ok' : 'test-fail'}`} key={`${step.name}-${step.detail}`} open={!step.ok}>
-              <summary>
-                <StatusBadge value={step.ok ? 'PASS' : 'FAIL'} tone={step.ok ? 'success' : 'danger'} />
-                <strong>{step.name}</strong>
-                <span>{step.detail}</span>
-              </summary>
-              <JsonBlock value={step.payload ?? null} />
-            </details>
-          ))
-        )}
-      </div>
-    </Card>
+        <div className="test-results separated">
+          {results.length === 0 ? (
+            <div className="empty-state"><strong>No test run yet.</strong><span>Run Smoke, E2E, Priority scenario, or advance the test clock.</span></div>
+          ) : (
+            results.map((step) => (
+              <details className={`test-step ${step.ok ? 'test-ok' : 'test-fail'}`} key={`${step.name}-${step.detail}`} open={!step.ok}>
+                <summary>
+                  <StatusBadge value={step.ok ? 'PASS' : 'FAIL'} tone={step.ok ? 'success' : 'danger'} />
+                  <strong>{step.name}</strong>
+                  <span>{step.detail}</span>
+                </summary>
+                <JsonBlock value={step.payload ?? null} />
+              </details>
+            ))
+          )}
+        </div>
+      </Card>
+    </div>
   );
 }

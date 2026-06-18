@@ -7,7 +7,7 @@ import { JsonBlock } from '../../components/JsonBlock';
 import { StatusBadge } from '../../components/StatusBadge';
 import { dateTime, money, priorityLabel, relativeMinutes, truncateMiddle } from '../../lib/format';
 import type { SnackBuildersApiClient } from '../../api/client';
-import type { MenuItem, Order, PriorityLevel } from '../../types/domain';
+import type { KitchenStatus, MenuItem, Order, PriorityLevel } from '../../types/domain';
 
 interface DraftOrderItem {
   localId: string;
@@ -22,6 +22,7 @@ interface OrdersPanelProps {
   selectedOrderId: string;
   onOrdersChange: (orders: Order[]) => void;
   onSelectedOrderIdChange: (orderId: string) => void;
+  onKitchenStatusChange: (status: KitchenStatus) => void;
   onError: (message: string) => void;
 }
 
@@ -38,6 +39,7 @@ export function OrdersPanel({
   selectedOrderId,
   onOrdersChange,
   onSelectedOrderIdChange,
+  onKitchenStatusChange,
   onError,
 }: OrdersPanelProps) {
   const [priority, setPriority] = useState<PriorityLevel>(3);
@@ -47,6 +49,7 @@ export function OrdersPanel({
   const [manualOrderId, setManualOrderId] = useState('');
   const [selectedItemId, setSelectedItemId] = useState('');
   const [selectedItemQuantity, setSelectedItemQuantity] = useState(1);
+  const [advanceMinutes, setAdvanceMinutes] = useState(5);
   const [isLoading, setIsLoading] = useState(false);
 
   const selectedOrder = useMemo(
@@ -169,6 +172,27 @@ export function OrdersPanel({
     }
   }
 
+  async function advanceKitchenTimeFromOrder(minutes: number) {
+    const seconds = Math.max(1, Math.round(minutes * 60));
+    setIsLoading(true);
+    try {
+      const kitchen = await api.advanceKitchenTime(seconds);
+      onKitchenStatusChange(kitchen);
+
+      const orderId = selectedOrderId || manualOrderId;
+      if (orderId) {
+        const refreshedOrder = await api.trackOrder(orderId);
+        onOrdersChange(upsertOrder(orders, refreshedOrder));
+        onSelectedOrderIdChange(refreshedOrder.id);
+        setManualOrderId(refreshedOrder.id);
+      }
+    } catch (error) {
+      onError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
   return (
     <Card
       title="Order Placement & Tracking"
@@ -230,6 +254,25 @@ export function OrdersPanel({
               </div>
               <p className="muted">Estimated ready time: {dateTime(selectedOrder.estimated_ready_time)}</p>
               <p className="muted">Priority: {priorityLabel(selectedOrder.priority_level)}</p>
+              <div className="time-control-card">
+                <div>
+                  <strong>Advance kitchen time</strong>
+                  <span>Refreshes oven state and this order after time moves.</span>
+                </div>
+                <div className="time-stepper">
+                  <Button variant="secondary" type="button" onClick={() => setAdvanceMinutes((value) => Math.max(0.5, value - 1))} disabled={isLoading}>-</Button>
+                  <TextInput type="number" min={0.5} step={0.5} value={advanceMinutes} onChange={(event) => setAdvanceMinutes(Number(event.target.value))} />
+                  <Button variant="secondary" type="button" onClick={() => setAdvanceMinutes((value) => value + 1)} disabled={isLoading}>+</Button>
+                </div>
+                <div className="time-presets">
+                  <Button variant="secondary" type="button" onClick={() => setAdvanceMinutes(5)} disabled={isLoading}>5m</Button>
+                  <Button variant="secondary" type="button" onClick={() => setAdvanceMinutes(10)} disabled={isLoading}>10m</Button>
+                  <Button variant="secondary" type="button" onClick={() => setAdvanceMinutes(20)} disabled={isLoading}>20m</Button>
+                  <Button type="button" onClick={() => advanceKitchenTimeFromOrder(advanceMinutes)} disabled={isLoading}>
+                    Advance {Math.max(1, Math.round(advanceMinutes * 60))}s
+                  </Button>
+                </div>
+              </div>
               <div className="button-row">
                 <Button variant="secondary" onClick={getBill} disabled={isLoading}>Get bill</Button>
                 <Button variant="secondary" onClick={updateFirstItemQuantity} disabled={isLoading || selectedOrder.items.length === 0}>+1 first item</Button>

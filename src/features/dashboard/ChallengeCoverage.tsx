@@ -1,4 +1,4 @@
-import { CheckCircle2, CircleDashed, Clock3, CreditCard, Flame, LockKeyhole, PackagePlus, ReceiptText } from 'lucide-react';
+import { CheckCircle2, CircleDashed, Clock3, CreditCard, FastForward, Flame, LockKeyhole, PackagePlus, ReceiptText } from 'lucide-react';
 import { Card } from '../../components/Card';
 import { StatusBadge } from '../../components/StatusBadge';
 import type { KitchenStatus, MenuItem, Order, Payment } from '../../types/domain';
@@ -9,13 +9,14 @@ interface ChallengeCoverageProps {
   payments: Payment[];
   kitchenStatus: KitchenStatus | null;
   hasToken: boolean;
+  hasTimeSimulationEvidence: boolean;
 }
 
 function requirementTone(isCovered: boolean) {
   return isCovered ? 'success' : 'warning';
 }
 
-export function ChallengeCoverage({ menu, orders, payments, kitchenStatus, hasToken }: ChallengeCoverageProps) {
+export function ChallengeCoverage({ menu, orders, payments, kitchenStatus, hasToken, hasTimeSimulationEvidence }: ChallengeCoverageProps) {
   const activeMenu = menu.filter((item) => item.is_active);
   const hasAllBakeRules = ['cookies', 'pastries', 'breads'].every((category) =>
     activeMenu.some((item) => item.category === category),
@@ -60,6 +61,12 @@ export function ChallengeCoverage({ menu, orders, payments, kitchenStatus, hasTo
       detail: hasPriorityOrder || hasQueuedWork ? 'Priority scenario evidence available' : 'Run Priority scenario',
       covered: hasPriorityOrder || hasQueuedWork,
       icon: CircleDashed,
+    },
+    {
+      title: 'Time simulation',
+      detail: hasTimeSimulationEvidence ? 'Test-clock endpoint has been exercised' : 'Use Verification to advance the backend test clock',
+      covered: hasTimeSimulationEvidence,
+      icon: FastForward,
     },
   ];
 

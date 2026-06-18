@@ -226,6 +226,7 @@ function App() {
               payments={payments}
               kitchenStatus={kitchenStatus}
               hasToken={Boolean(token.trim())}
+              hasTimeSimulationEvidence={logs.some((entry) => entry.path === '/kitchen/time/advance')}
             />
             <ApiLogPanel entries={logs} onClear={() => setLogs([])} />
           </div>
