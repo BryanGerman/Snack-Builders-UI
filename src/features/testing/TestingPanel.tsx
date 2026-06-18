@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type Dispatch, type SetStateAction } from 'react';
 import { Button } from '../../components/Button';
 import { Card } from '../../components/Card';
 import { JsonBlock } from '../../components/JsonBlock';
@@ -6,18 +6,19 @@ import { StatusBadge } from '../../components/StatusBadge';
 import { money, priorityLabel, relativeMinutes, truncateMiddle } from '../../lib/format';
 import type { SnackBuildersApiClient } from '../../api/client';
 import type { KitchenStatus, MenuItem, Order, Payment, PriorityLevel, SnackCategory, TestStepResult } from '../../types/domain';
+import { TimeSimulationPanel } from './TimeSimulationPanel';
 
 interface TestingPanelProps {
   api: SnackBuildersApiClient;
   menu: MenuItem[];
-  orders: Order[];
-  payments: Payment[];
-  onMenuChange: (items: MenuItem[]) => void;
-  onOrdersChange: (orders: Order[]) => void;
-  onPaymentsChange: (payments: Payment[]) => void;
+  onMenuChange: Dispatch<SetStateAction<MenuItem[]>>;
+  onOrdersChange: Dispatch<SetStateAction<Order[]>>;
+  onPaymentsChange: Dispatch<SetStateAction<Payment[]>>;
   onKitchenStatusChange: (status: KitchenStatus) => void;
   onSelectedOrderIdChange: (orderId: string) => void;
   onError: (message: string) => void;
+  onReload: () => void | Promise<void>;
+  isReloading: boolean;
 }
 
 function upsertOrder(orders: Order[], next: Order): Order[] {
@@ -30,21 +31,25 @@ function makeStep(name: string, ok: boolean, detail: string, payload?: unknown):
   return { name, ok, detail, payload };
 }
 
+function kitchenHasOrder(status: KitchenStatus, orderId: string): boolean {
+  return [...status.active_tasks, ...status.queued_tasks].some((task) => task.order_id === orderId);
+}
+
 export function TestingPanel({
   api,
   menu,
-  orders,
-  payments,
   onMenuChange,
   onOrdersChange,
   onPaymentsChange,
   onKitchenStatusChange,
   onSelectedOrderIdChange,
   onError,
+  onReload,
+  isReloading,
 }: TestingPanelProps) {
   const [results, setResults] = useState<TestStepResult[]>([]);
   const [scenarioOrders, setScenarioOrders] = useState<Order[]>([]);
-  const [isRunning, setIsRunning] = useState(false);
+  const [pendingScenario, setPendingScenario] = useState('');
 
   function push(step: TestStepResult) {
     setResults((current) => [step, ...current]);
@@ -58,7 +63,7 @@ export function TestingPanel({
     const bakeName = category === 'cookies' ? 'Smoke Test Cookies' : category === 'pastries' ? 'Smoke Test Pastries' : 'Smoke Test Bread';
     const price = category === 'cookies' ? '3.50' : category === 'pastries' ? '5.25' : '7.75';
     const created = await api.createMenuItem({ name: `${bakeName} ${Date.now()}`, category, price });
-    onMenuChange([created, ...latestMenu]);
+    onMenuChange((current) => [created, ...current]);
     return created;
   }
 
@@ -67,13 +72,42 @@ export function TestingPanel({
       priority_level: priority,
       items: [{ menu_item_id: menuItem.id, quantity }],
     });
-    onOrdersChange(upsertOrder(orders, order));
+    onOrdersChange((current) => upsertOrder(current, order));
     onSelectedOrderIdChange(order.id);
+    await syncKitchenForOrder(order.id);
     return order;
   }
 
+  async function syncKitchenForOrder(orderId: string): Promise<KitchenStatus | null> {
+    try {
+      const current = await api.getKitchenStatus();
+      if (kitchenHasOrder(current, orderId)) {
+        onKitchenStatusChange(current);
+        return current;
+      }
+    } catch {
+      // Try explicit scheduling when the status read is unavailable.
+    }
+
+    try {
+      const scheduled = await api.scheduleOrder(orderId);
+      onKitchenStatusChange(scheduled);
+      return scheduled;
+    } catch {
+      // If the backend auto-scheduled or rejected a duplicate request, a final status read may still be correct.
+    }
+
+    try {
+      const refreshed = await api.getKitchenStatus();
+      onKitchenStatusChange(refreshed);
+      return refreshed;
+    } catch {
+      return null;
+    }
+  }
+
   async function runSmokeTests() {
-    setIsRunning(true);
+    setPendingScenario('smoke');
     setResults([]);
     try {
       const items = await api.listMenu();
@@ -100,12 +134,12 @@ export function TestingPanel({
       push(makeStep('Smoke test failed', false, message));
       onError(message);
     } finally {
-      setIsRunning(false);
+      setPendingScenario('');
     }
   }
 
   async function runCompleteE2E() {
-    setIsRunning(true);
+    setPendingScenario('e2e');
     setResults([]);
     try {
       const cookies = await ensureMenuItem('cookies');
@@ -121,19 +155,20 @@ export function TestingPanel({
           { menu_item_id: bread.id, quantity: 1 },
         ],
       });
-      onOrdersChange(upsertOrder(orders, order));
+      onOrdersChange((current) => upsertOrder(current, order));
       onSelectedOrderIdChange(order.id);
+      await syncKitchenForOrder(order.id);
       push(makeStep('Multi-item order placed', true, `Ticket ${truncateMiddle(order.id, 24)} · total ${money(order.total_price)} · ETA ${relativeMinutes(order.estimated_ready_time)}`, order));
 
       const bill = await api.getBill(order.id);
       push(makeStep('Price ticket / bill verified', true, `Subtotal ${money(bill.subtotal)}, amount due ${money(bill.amount_due)}`, bill));
 
       const payment = await api.createPayment({ order_id: order.id, amount: bill.amount_due, method: 'credit_card' });
-      onPaymentsChange([payment, ...payments]);
+      onPaymentsChange((current) => [payment, ...current]);
       push(makeStep('Credit card payment accepted', true, `Payment ${payment.status} for ${money(payment.amount)}`, payment));
 
       const paidOrder = await api.trackOrder(order.id);
-      onOrdersChange(upsertOrder(upsertOrder(orders, order), paidOrder));
+      onOrdersChange((current) => upsertOrder(upsertOrder(current, order), paidOrder));
       push(makeStep('Order payment status refreshed', paidOrder.payment_status === 'paid', `Payment status: ${paidOrder.payment_status}`, paidOrder));
 
       const kitchen = await api.getKitchenStatus();
@@ -144,12 +179,12 @@ export function TestingPanel({
       push(makeStep('E2E flow failed', false, message));
       onError(message);
     } finally {
-      setIsRunning(false);
+      setPendingScenario('');
     }
   }
 
   async function runPriorityScenario() {
-    setIsRunning(true);
+    setPendingScenario('priority');
     setResults([]);
     setScenarioOrders([]);
     try {
@@ -164,6 +199,9 @@ export function TestingPanel({
           items: [{ menu_item_id: bread.id, quantity: 1 }],
         });
         created.push(order);
+        onOrdersChange((current) => upsertOrder(current, order));
+        onSelectedOrderIdChange(order.id);
+        await syncKitchenForOrder(order.id);
         push(makeStep(`Capacity filler ${i + 1}/6`, true, `${priorityLabel(order.priority_level)} · ETA ${relativeMinutes(order.estimated_ready_time)}`, order));
       }
 
@@ -176,7 +214,9 @@ export function TestingPanel({
         items: [{ menu_item_id: cookies.id, quantity: 1 }],
       });
       created.push(vip);
+      onOrdersChange((current) => upsertOrder(current, vip));
       onSelectedOrderIdChange(vip.id);
+      await syncKitchenForOrder(vip.id);
       push(makeStep('VIP order inserted', true, `VIP ticket ${truncateMiddle(vip.id, 24)} · ETA ${relativeMinutes(vip.estimated_ready_time)}`, vip));
 
       const afterVip = await api.getKitchenStatus();
@@ -192,77 +232,166 @@ export function TestingPanel({
         }
       }
       setScenarioOrders(refreshed);
-      onOrdersChange([...refreshed, ...orders.filter((order) => !refreshed.some((next) => next.id === order.id))]);
+      onOrdersChange((current) => [...refreshed, ...current.filter((order) => !refreshed.some((next) => next.id === order.id))]);
       push(makeStep('Lower-priority ETAs refreshed', true, 'Tracked scenario orders after VIP insertion to compare estimated_ready_time.', refreshed));
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       push(makeStep('Priority scenario failed', false, message));
       onError(message);
     } finally {
-      setIsRunning(false);
+      setPendingScenario('');
+    }
+  }
+
+  async function runPartialOrderPriorityScenario() {
+    setPendingScenario('partial-priority');
+    setResults([]);
+    setScenarioOrders([]);
+    try {
+      const bread = await ensureMenuItem('breads');
+      const cookies = await ensureMenuItem('cookies');
+      push(makeStep('Partial-order scenario menu ready', true, 'Using one low-priority order with 8 breads, then one VIP order with 2 cookies.', { bread, cookies }));
+
+      const low = await createSingleItemOrder(bread, 3, 8);
+      push(makeStep('Low-priority bulk order placed', true, `Tier 3 ticket ${truncateMiddle(low.id, 24)} with 8 bake tasks. Six should start and two should remain queued when capacity is empty.`, low));
+
+      const beforeVip = await api.getKitchenStatus();
+      onKitchenStatusChange(beforeVip);
+      const lowActiveBeforeVip = beforeVip.active_tasks.filter((task) => task.order_id === low.id);
+      const lowQueuedBeforeVip = beforeVip.queued_tasks.filter((task) => task.order_id === low.id);
+      push(makeStep(
+        'Bulk order occupies available slots',
+        lowActiveBeforeVip.length > 0 && lowQueuedBeforeVip.length > 0,
+        `${lowActiveBeforeVip.length} low-priority tasks active, ${lowQueuedBeforeVip.length} low-priority tasks queued.`,
+        beforeVip,
+      ));
+
+      const vip = await createSingleItemOrder(cookies, 1, 2);
+      push(makeStep('VIP partial interrupt order placed', true, `VIP ticket ${truncateMiddle(vip.id, 24)} with 2 bake tasks. Running low-priority bakes stay active; queued VIP tasks should jump ahead.`, vip));
+
+      const afterVip = await api.getKitchenStatus();
+      onKitchenStatusChange(afterVip);
+      const queueOrderIds = afterVip.queued_tasks.map((task) => task.order_id);
+      const vipQueueIndexes = queueOrderIds
+        .map((orderId, index) => (orderId === vip.id ? index : -1))
+        .filter((index) => index >= 0);
+      const lowQueueIndexes = queueOrderIds
+        .map((orderId, index) => (orderId === low.id ? index : -1))
+        .filter((index) => index >= 0);
+      const vipAheadOfLowRemainder =
+        vipQueueIndexes.length >= 2 &&
+        lowQueueIndexes.length > 0 &&
+        Math.max(...vipQueueIndexes) < Math.min(...lowQueueIndexes);
+
+      push(makeStep(
+        'VIP queued ahead of low-priority remainder',
+        vipAheadOfLowRemainder,
+        vipAheadOfLowRemainder
+          ? 'Queued VIP tasks are ahead of the remaining low-priority tasks; active low-priority bakes were not preempted.'
+          : 'Expected VIP queued tasks to appear before the low-priority remainder. This indicates the backend may be scheduling by order instead of by task priority.',
+        {
+          active_tasks: afterVip.active_tasks,
+          queued_tasks: afterVip.queued_tasks,
+          vip_order_id: vip.id,
+          low_order_id: low.id,
+          vip_queue_indexes: vipQueueIndexes,
+          low_queue_indexes: lowQueueIndexes,
+        },
+      ));
+
+      const refreshed: Order[] = [];
+      for (const order of [low, vip]) {
+        try {
+          refreshed.push(await api.trackOrder(order.id));
+        } catch {
+          refreshed.push(order);
+        }
+      }
+      setScenarioOrders(refreshed);
+      onOrdersChange((current) => [...refreshed, ...current.filter((order) => !refreshed.some((next) => next.id === order.id))]);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      push(makeStep('Partial-order priority scenario failed', false, message));
+      onError(message);
+    } finally {
+      setPendingScenario('');
     }
   }
 
   return (
-    <Card
-      title="Automated Functional Test Console"
-      subtitle="Runs high-value scenarios for the challenge: menu, order ticket, payment, kitchen capacity, priority queue, and ETA updates."
-      actions={
-        <div className="button-row">
-          <Button variant="secondary" onClick={runSmokeTests} disabled={isRunning}>Smoke</Button>
-          <Button onClick={runCompleteE2E} disabled={isRunning}>Run E2E</Button>
-          <Button variant="secondary" onClick={runPriorityScenario} disabled={isRunning}>Priority scenario</Button>
+    <div className="page-stack">
+      <TimeSimulationPanel
+        api={api}
+        onKitchenStatusChange={onKitchenStatusChange}
+        onResult={push}
+        onError={onError}
+      />
+
+      <Card
+        title="Functional Scenarios"
+        subtitle="Run high-value checks for menu, tickets, payment, capacity, priority queue, and ETA updates."
+        actions={
+          <div className="button-row">
+            <Button variant="secondary" onClick={onReload} disabled={isReloading}>Reload</Button>
+            <Button variant="secondary" onClick={runSmokeTests} disabled={pendingScenario === 'smoke'}>Smoke</Button>
+            <Button onClick={runCompleteE2E} disabled={pendingScenario === 'e2e'}>Run E2E</Button>
+            <Button variant="secondary" onClick={runPriorityScenario} disabled={pendingScenario === 'priority'}>Priority scenario</Button>
+            <Button variant="secondary" onClick={runPartialOrderPriorityScenario} disabled={pendingScenario === 'partial-priority'}>Partial VIP</Button>
+          </div>
+        }
+      >
+        <div className="info-callout">
+          <strong>Priority scenario intent:</strong> scheduling is per bake task/tray. Active bakes must not be removed from ovens, but unstarted low-priority tasks from the same order must yield to later VIP tasks.
         </div>
-      }
-    >
-      <div className="info-callout">
-        <strong>Priority scenario intent:</strong> create 6 active bakes to fill capacity, then insert a VIP order. Existing bakes must not be preempted; queued lower-priority work should be delayed behind VIP work when the scheduler recalculates estimates.
-      </div>
+      </Card>
 
       {scenarioOrders.length > 0 && (
-        <div className="table-wrap separated">
-          <h3>Scenario orders and ETAs</h3>
-          <table>
-            <thead>
-              <tr>
-                <th>Order</th>
-                <th>Priority</th>
-                <th>Status</th>
-                <th>Total</th>
-                <th>Estimated ready</th>
-              </tr>
-            </thead>
-            <tbody>
-              {scenarioOrders.map((order) => (
-                <tr key={order.id}>
-                  <td className="mono">{truncateMiddle(order.id, 20)}</td>
-                  <td><StatusBadge value={priorityLabel(order.priority_level)} tone={order.priority_level === 1 ? 'vip' : order.priority_level === 2 ? 'warning' : 'neutral'} /></td>
-                  <td>{order.status}</td>
-                  <td>{money(order.total_price)}</td>
-                  <td>{relativeMinutes(order.estimated_ready_time)}</td>
+        <Card title="Scenario Orders" subtitle="ETA evidence after capacity filling and VIP insertion.">
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Order</th>
+                  <th>Priority</th>
+                  <th>Status</th>
+                  <th>Total</th>
+                  <th>Estimated ready</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {scenarioOrders.map((order) => (
+                  <tr key={order.id}>
+                    <td className="mono">{truncateMiddle(order.id, 20)}</td>
+                    <td><StatusBadge value={priorityLabel(order.priority_level)} tone={order.priority_level === 1 ? 'vip' : order.priority_level === 2 ? 'warning' : 'neutral'} /></td>
+                    <td>{order.status}</td>
+                    <td>{money(order.total_price)}</td>
+                    <td>{relativeMinutes(order.estimated_ready_time)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
       )}
 
-      <div className="test-results separated">
-        {results.length === 0 ? (
-          <div className="empty-state"><strong>No test run yet.</strong><span>Run Smoke, E2E, or Priority scenario.</span></div>
-        ) : (
-          results.map((step) => (
-            <details className={`test-step ${step.ok ? 'test-ok' : 'test-fail'}`} key={`${step.name}-${step.detail}`} open={!step.ok}>
-              <summary>
-                <StatusBadge value={step.ok ? 'PASS' : 'FAIL'} tone={step.ok ? 'success' : 'danger'} />
-                <strong>{step.name}</strong>
-                <span>{step.detail}</span>
-              </summary>
-              <JsonBlock value={step.payload ?? null} />
-            </details>
-          ))
-        )}
-      </div>
-    </Card>
+      <Card title="Test Results" subtitle="Step-by-step request evidence from the latest run.">
+        <div className="test-results">
+          {results.length === 0 ? (
+            <div className="empty-state"><strong>No test run yet.</strong><span>Run Smoke, E2E, Priority scenario, or advance the test clock.</span></div>
+          ) : (
+            results.map((step) => (
+              <details className={`test-step ${step.ok ? 'test-ok' : 'test-fail'}`} key={`${step.name}-${step.detail}`} open={!step.ok}>
+                <summary>
+                  <StatusBadge value={step.ok ? 'PASS' : 'FAIL'} tone={step.ok ? 'success' : 'danger'} />
+                  <strong>{step.name}</strong>
+                  <span>{step.detail}</span>
+                </summary>
+                <JsonBlock value={step.payload ?? null} />
+              </details>
+            ))
+          )}
+        </div>
+      </Card>
+    </div>
   );
 }

@@ -109,12 +109,14 @@ export interface KitchenTask {
   started_at: string | null;
   finishes_at: string | null;
   bake_time_minutes: number;
+  remaining_bake_seconds?: number | null;
 }
 
 export interface KitchenStatus {
   ovens: number;
   slots_per_oven: number;
   total_slots: number;
+  current_time?: string;
   active_tasks: KitchenTask[];
   queued_tasks: KitchenTask[];
 }

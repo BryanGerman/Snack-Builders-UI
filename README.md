@@ -62,6 +62,8 @@ VITE_PROXY_TARGET=https://j6zpaomc2l.execute-api.us-east-1.amazonaws.com
 VITE_DEMO_JWT_SECRET=dev-only-snack-builders-secret
 ```
 
+For GitHub Pages, define `VITE_PROXY_TARGET` as a repository variable with the API Gateway base URL. The static production build cannot use the Vite `/api` proxy.
+
 Restart Vite after changing `.env.local`:
 
 ```bash

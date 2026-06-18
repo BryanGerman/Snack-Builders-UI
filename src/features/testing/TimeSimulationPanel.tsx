@@ -1,0 +1,103 @@
+import { useMemo, useState } from 'react';
+import { Button } from '../../components/Button';
+import { Card } from '../../components/Card';
+import { Field, TextInput } from '../../components/FormField';
+import { JsonBlock } from '../../components/JsonBlock';
+import { dateTime } from '../../lib/format';
+import type { SnackBuildersApiClient } from '../../api/client';
+import type { KitchenStatus, TestStepResult } from '../../types/domain';
+
+interface TimeSimulationPanelProps {
+  api: SnackBuildersApiClient;
+  onKitchenStatusChange: (status: KitchenStatus) => void;
+  onResult: (result: TestStepResult) => void;
+  onError: (message: string) => void;
+}
+
+export function TimeSimulationPanel({
+  api,
+  onKitchenStatusChange,
+  onResult,
+  onError,
+}: TimeSimulationPanelProps) {
+  const [minutes, setMinutes] = useState(1);
+  const [lastResponse, setLastResponse] = useState<KitchenStatus | null>(null);
+  const [isAdvancing, setIsAdvancing] = useState(false);
+  const seconds = useMemo(() => Math.max(1, Math.round(Number(minutes || 0) * 60)), [minutes]);
+
+  function adjustMinutes(delta: number) {
+    setMinutes((current) => Math.max(0.5, Number((Number(current || 0) + delta).toFixed(1))));
+  }
+
+  async function advanceTime() {
+    setIsAdvancing(true);
+    try {
+      const kitchen = await api.advanceKitchenTime(seconds);
+      onKitchenStatusChange(kitchen);
+      setLastResponse(kitchen);
+      onResult({
+        name: `Kitchen time advanced ${seconds} seconds`,
+        ok: true,
+        detail: `Current kitchen time: ${dateTime(kitchen.current_time ?? null)}. Use Reload to refresh order records on demand.`,
+        payload: { request: { seconds }, kitchen },
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      onResult({ name: 'Kitchen time advance failed', ok: false, detail: message, payload: { request: { seconds } } });
+      onError(message);
+    } finally {
+      setIsAdvancing(false);
+    }
+  }
+
+  return (
+    <Card
+      title="Kitchen Time Simulation"
+      subtitle="Advance the kitchen scheduler clock using POST /kitchen/time/advance without refreshing every order automatically."
+      actions={
+        <Button onClick={advanceTime} disabled={isAdvancing}>
+          Advance {seconds}s
+        </Button>
+      }
+    >
+      <div className="grid grid-2">
+        <div className="stack">
+          <div className="grid grid-2">
+            <Field label="Minutes to advance" hint="Advance 1 minute to see remaining time decrease; 5 minutes completes cookies.">
+              <div className="time-stepper">
+                <Button variant="secondary" type="button" onClick={() => adjustMinutes(-1)}>-</Button>
+                <TextInput type="number" min={0.5} step="0.5" value={minutes} onChange={(event) => setMinutes(Number(event.target.value))} />
+                <Button variant="secondary" type="button" onClick={() => adjustMinutes(1)}>+</Button>
+              </div>
+            </Field>
+            <div className="metric">
+              <span>Request body</span>
+              <strong className="mono">{`{ "seconds": ${seconds} }`}</strong>
+            </div>
+          </div>
+
+          <div className="time-presets" aria-label="Bake time presets">
+            <Button variant="secondary" type="button" onClick={() => setMinutes(5)}>Cookies 5m</Button>
+            <Button variant="secondary" type="button" onClick={() => setMinutes(10)}>Pastries 10m</Button>
+            <Button variant="secondary" type="button" onClick={() => setMinutes(20)}>Breads 20m</Button>
+            <Button variant="ghost" type="button" onClick={() => adjustMinutes(1)}>+1m</Button>
+            <Button variant="ghost" type="button" onClick={() => adjustMinutes(5)}>+5m</Button>
+          </div>
+
+          <div className="info-callout">
+            <strong>Dev/demo endpoint:</strong> requires a token with <span className="mono">kitchen:write</span>. In production the backend may return 403 because time simulation is disabled.
+          </div>
+
+          <div className="info-callout">
+            <strong>Manual reload:</strong> advancing time updates the kitchen snapshot immediately. Use Reload when you want to refresh order records, avoiding a request per order.
+          </div>
+        </div>
+
+        <details className="details-panel json-card">
+          <summary>Last kitchen time response</summary>
+          <JsonBlock value={lastResponse ?? { message: 'No kitchen time advance run yet.', endpoint: 'POST /kitchen/time/advance' }} />
+        </details>
+      </div>
+    </Card>
+  );
+}

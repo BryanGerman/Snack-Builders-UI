@@ -19,6 +19,7 @@ interface ApiClientOptions {
   baseUrl: string;
   token: string;
   onLog?: Logger;
+  blockRelativeUrls?: boolean;
 }
 
 interface RequestOptions {
@@ -26,12 +27,19 @@ interface RequestOptions {
   body?: unknown;
 }
 
+export type ApiRequestMethod = NonNullable<RequestOptions['method']>;
+const REQUEST_TIMEOUT_MS = 25_000;
+
 function cleanBaseUrl(baseUrl: string): string {
   return baseUrl.trim().replace(/\/+$/, '');
 }
 
 function pathWithSlash(path: string): string {
   return path.startsWith('/') ? path : `/${path}`;
+}
+
+function isAbsoluteHttpUrl(url: string): boolean {
+  return /^https?:\/\//i.test(url.trim());
 }
 
 async function parseBody(response: Response): Promise<unknown> {
@@ -50,15 +58,21 @@ function errorMessage(status: number, body: unknown): string {
   return `HTTP ${status}`;
 }
 
+function requestTimeoutMessage(path: string): string {
+  return `Request to ${path} timed out after ${Math.round(REQUEST_TIMEOUT_MS / 1000)}s. Check the API URL, CORS, or backend availability.`;
+}
+
 export class SnackBuildersApiClient {
   private readonly baseUrl: string;
   private readonly token: string;
   private readonly onLog: Logger | undefined;
+  private readonly blockRelativeUrls: boolean;
 
   constructor(options: ApiClientOptions) {
-    this.baseUrl = cleanBaseUrl(options.baseUrl || '/api');
+    this.baseUrl = cleanBaseUrl(options.baseUrl);
     this.token = options.token;
     this.onLog = options.onLog;
+    this.blockRelativeUrls = options.blockRelativeUrls ?? false;
   }
 
   private async request<T>(path: string, options: RequestOptions = {}): Promise<T> {
@@ -73,14 +87,25 @@ export class SnackBuildersApiClient {
       headers.Authorization = `Bearer ${this.token.trim()}`;
     }
 
-    const init: RequestInit = { method, headers };
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    const init: RequestInit = { method, headers, signal: controller.signal };
     if (options.body !== undefined) {
       headers['Content-Type'] = 'application/json';
       init.body = JSON.stringify(options.body);
     }
 
     try {
+      if (this.blockRelativeUrls && !isAbsoluteHttpUrl(this.baseUrl)) {
+        throw new ApiError(
+          'API base URL is not configured for production. Set VITE_PROXY_TARGET to the API Gateway URL.',
+          0,
+          null,
+        );
+      }
+
       const response = await fetch(`${this.baseUrl}${normalizedPath}`, init);
+      window.clearTimeout(timeout);
       const body = await parseBody(response);
       const durationMs = Math.round(performance.now() - started);
       this.onLog?.({
@@ -100,7 +125,11 @@ export class SnackBuildersApiClient {
       }
       return body as T;
     } catch (error) {
+      window.clearTimeout(timeout);
       if (error instanceof ApiError) throw error;
+      const normalizedError = error instanceof DOMException && error.name === 'AbortError'
+        ? new Error(requestTimeoutMessage(normalizedPath))
+        : error;
       const durationMs = Math.round(performance.now() - started);
       this.onLog?.({
         id: crypto.randomUUID(),
@@ -110,9 +139,9 @@ export class SnackBuildersApiClient {
         ok: false,
         durationMs,
         requestBody: options.body,
-        error: error instanceof Error ? error.message : String(error),
+        error: normalizedError instanceof Error ? normalizedError.message : String(normalizedError),
       });
-      throw error;
+      throw normalizedError;
     }
   }
 
@@ -182,5 +211,13 @@ export class SnackBuildersApiClient {
 
   scheduleOrder(orderId: string) {
     return this.request<KitchenStatus>(`/kitchen/orders/${encodeURIComponent(orderId)}/schedule`, { method: 'POST' });
+  }
+
+  advanceKitchenTime(seconds: number) {
+    return this.request<KitchenStatus>('/kitchen/time/advance', { method: 'POST', body: { seconds } });
+  }
+
+  testingEndpoint<T = unknown>(path: string, method: ApiRequestMethod = 'GET', body?: unknown) {
+    return this.request<T>(path, { method, body });
   }
 }
